@@ -14,7 +14,12 @@ from twilio.twiml.messaging_response import MessagingResponse
 import uuid
 
 
-import sqlite3, psycopg2, psycopg2.extras
+import sqlite3
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
 
 def get_db():
     if DATABASE_URL:
