@@ -1,3 +1,4 @@
+import os
 # ============================================================
 #  Village Sarpanch WhatsApp Agent — Production-Grade Demo
 #  Run:  pip install flask twilio
@@ -12,7 +13,44 @@ from datetime import datetime
 from twilio.twiml.messaging_response import MessagingResponse
 import uuid
 
+
+import sqlite3, psycopg2, psycopg2.extras
+
+def get_db():
+    if DATABASE_URL:
+        try:
+            conn = psycopg2.connect(DATABASE_URL)
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            return conn, "pg"
+        except Exception as e:
+            print(f"PG failed: {e}")
+    conn = sqlite3.connect("sarpanch.db", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn, "sqlite"
+
+def init_db():
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS complaints (
+        id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT,
+        description TEXT, location TEXT, priority TEXT DEFAULT 'medium',
+        status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS certificates (
+        id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT,
+        purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS works (
+        id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS announcements (
+        id """ + ("SERIAL" if db_type=="pg" else "INTEGER") + """ PRIMARY KEY """ + ("" if db_type=="pg" else "AUTOINCREMENT") + """, title TEXT, body TEXT, date TEXT)""")
+    conn.commit(); conn.close()
+    print(f"Database ready ({db_type})")
+
+init_db()
+
 app = Flask(__name__)
+DATABASE_URL  = os.environ.get("DATABASE_URL",  "")
+
 app.secret_key = "sarpanch_secret_2024_vG7#nQ"
 
 # ── Twilio config ─────────────────────────────────────────────
