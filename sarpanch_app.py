@@ -21,6 +21,8 @@ try:
 except ImportError:
     psycopg2 = None
 
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+
 def get_db():
     if DATABASE_URL:
         try:
