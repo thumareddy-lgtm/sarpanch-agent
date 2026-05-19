@@ -35,7 +35,7 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    # Add photos table for sarpanch photos
+    # Create all tables
     cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
@@ -46,31 +46,58 @@ def init_db():
     conn.close()
     print(f"✅ Database ready ({db_type})")
 
+def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
+def fmt_time(): return datetime.now().strftime("%H:%M")
+def new_id(prefix=""): return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
+
+# ── Settings Functions ────────────────────────────────────────
 def get_setting(key, default=None):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
-    cur.execute(f"SELECT value FROM settings WHERE key={p}", (key,))
-    row = cur.fetchone()
+    try:
+        if db_type == "pg":
+            cur.execute("SELECT value FROM settings WHERE key = %s", (key,))
+        else:
+            cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            return row["value"] if isinstance(row, dict) else row[0]
+    except Exception as e:
+        print(f"Error getting setting: {e}")
     conn.close()
-    if row:
-        return row["value"] if isinstance(row, dict) else row[0]
     return default
 
 def set_setting(key, value):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
-    # Use upsert pattern
-    cur.execute(f"DELETE FROM settings WHERE key={p}", (key,))
-    cur.execute(f"INSERT INTO settings (key, value) VALUES ({p}, {p})", (key, value))
-    conn.commit()
+    try:
+        if db_type == "pg":
+            cur.execute("DELETE FROM settings WHERE key = %s", (key,))
+            cur.execute("INSERT INTO settings (key, value) VALUES (%s, %s)", (key, value))
+        else:
+            cur.execute("DELETE FROM settings WHERE key = ?", (key,))
+            cur.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (key, value))
+        conn.commit()
+    except Exception as e:
+        print(f"Error setting setting: {e}")
     conn.close()
 
-def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
-def fmt_time(): return datetime.now().strftime("%H:%M")
-def new_id(prefix=""): return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
+def get_sarpanch_photo():
+    """Get sarpanch dashboard photo from database"""
+    photo = get_setting("sarpanch_photo", None)
+    return photo if photo else ""
 
+def get_sarpanch_avatar():
+    """Get sarpanch chat avatar from database"""
+    avatar = get_setting("sarpanch_avatar", None)
+    return avatar if avatar else ""
+
+def allowed_file(filename):
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# ── CRUD Operations ───────────────────────────────────────────
 def insert_complaint(c):
     conn, db_type = get_db(); cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
@@ -145,27 +172,6 @@ def insert_announcement(title, body):
     p = "%s" if db_type == "pg" else "?"
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title,body,now_str()))
     conn.commit(); conn.close()
-
-# ── Photo Upload Functions ─────────────────────────────────────
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
-
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
-
-def get_sarpanch_photo():
-    """Get sarpanch photo from database"""
-    photo = get_setting("sarpanch_photo", None)
-    if photo:
-        return photo
-    # Return a placeholder if no photo uploaded
-    return ""
-
-def get_sarpanch_avatar():
-    """Get sarpanch avatar from database"""
-    avatar = get_setting("sarpanch_avatar", None)
-    if avatar:
-        return avatar
-    return ""
 
 # ── Bot ───────────────────────────────────────────────────────
 MENU_EN = (
@@ -330,7 +336,11 @@ body{font-family:'Inter',sans-serif;background:#d9dbdd;min-height:100vh;display:
 </style></head><body>
 <div class="phone">
   <div class="header">
+    {% if photo %}
     <img class="avatar" src="data:image/jpeg;base64,{{ photo }}" alt="">
+    {% else %}
+    <div class="avatar" style="background:#2d5a3d;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px">📷</div>
+    {% endif %}
     <div class="header-text"><h2>{{ sarpanch }}</h2><p>{{ village }} Gram Panchayat</p></div>
   </div>
   <div class="chat" id="cb">
@@ -414,7 +424,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
     {% if dash_photo %}
     <img src="data:image/jpeg;base64,{{ dash_photo }}" alt="Sarpanch" style="width:120px;height:120px;border-radius:12px;object-fit:cover;object-position:top;border:3px solid #4a7c59;box-shadow:0 4px 12px rgba(0,0,0,.15)">
     {% else %}
-    <div style="width:120px;height:120px;border-radius:12px;background:#e0e7ff;border:3px solid #4a7c59;display:flex;align-items:center;justify-content:center;color:#6b778c;font-size:12px;text-align:center">No Photo<br>Upload One</div>
+    <div style="width:120px;height:120px;border-radius:12px;background:#e0e7ff;border:3px solid #4a7c59;display:flex;align-items:center;justify-content:center;color:#6b778c;font-size:12px;text-align:center">📷 No Photo<br>Upload One</div>
     {% endif %}
     <div>
       <div style="font-size:22px;font-weight:700;color:#172b4d">{{ sarpanch }}</div>
@@ -444,7 +454,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   {% if ac %}
   <div class="desktop-only"><table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
-    <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
+    <td>{{ loop.index }}</td>
+    <td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
     <td>{{ x.category }}</td>
     <td>{{ x.location }}</td>
@@ -485,9 +496,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sh">Certificate Requests <span>Pending + Processing</span></div>
   {% set ac=certs|selectattr("status","in",["pending","processing"])|list %}
   {% if ac %}
-  <div class="desktop-only"></table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  <div class="desktop-only"><tr><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
-    <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
+    <td>{{ loop.index }}</td>
+    <td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
     <td>{{ x.type }}</td>
     <td>{{ x.purpose }}</td>
@@ -523,7 +535,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 
 <div class="sec">
   <div class="sh">Development Works</div>
-  {% if works %}</table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+  {% if works %}<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
   {% for w in works %}<tr>
     <td><strong>{{ w.id }}</strong></td>
     <td>{{ w.title }}</td>
@@ -544,7 +556,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 
 <div class="sec">
   <div class="sh">Announcements</div>
-  {% if announcements %}<td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+  {% if announcements %}<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}<tr>
     <td><strong>{{ a.title }}</strong></td>
     <td>{{ a.body }}</td>
@@ -562,7 +574,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sh">Resolved / Closed</div>
   {% set dc=complaints|selectattr("status","in",["resolved","rejected"])|list %}
   {% set dce=certs|selectattr("status","in",["ready","rejected"])|list %}
-  {% if dc or dce %}<table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th></tr></thead><tbody>
+  {% if dc or dce %}<tr><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th></tr></thead><tbody>
   {% for x in dc %}<tr>
     <td>{{ x.id }}</td>
     <td>Complaint</td>
@@ -633,11 +645,7 @@ def chat_view():
         chips=(CHIPS_TE if lang=="te" else CHIPS_EN) if session["ctx"].get("state")=="idle" else []
     session["chat"]=session["chat"][-80:]
     
-    # Get avatar photo from database
     avatar_photo = get_sarpanch_avatar()
-    if not avatar_photo:
-        avatar_photo = ""  # Empty, will show placeholder
-    
     return render_template_string(CHAT_HTML, chat=session["chat"], chips=chips,
         village=VILLAGE_NAME, sarpanch=SARPANCH_NAME, photo=avatar_photo)
 
@@ -652,9 +660,7 @@ def dashboard():
         hi=sum(1 for x in ac if x.get("priority")=="high" and x["status"] not in ("resolved","rejected")),
     )
     
-    # Get dashboard photo from database
     dash_photo = get_sarpanch_photo()
-    
     return render_template_string(DASH_HTML, complaints=ac, certs=ce, works=wo,
         announcements=an, village=VILLAGE_NAME, sarpanch=SARPANCH_NAME,
         mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"),
@@ -662,8 +668,6 @@ def dashboard():
 
 @app.route("/upload_photo", methods=["POST"])
 def upload_photo():
-    import base64
-    
     if 'photo' not in request.files:
         return "No file uploaded", 400
     
@@ -672,17 +676,9 @@ def upload_photo():
         return "No file selected", 400
     
     if file and allowed_file(file.filename):
-        # Read and convert to base64
         photo_data = base64.b64encode(file.read()).decode('utf-8')
-        
-        # Determine if it's for dashboard or avatar
-        photo_type = request.form.get("photo_type", "dashboard")
-        
-        if photo_type == "dashboard":
-            set_setting("sarpanch_photo", photo_data)
-        else:
-            set_setting("sarpanch_avatar", photo_data)
-        
+        set_setting("sarpanch_photo", photo_data)
+        set_setting("sarpanch_avatar", photo_data)
         return redirect("/sarpanch")
     
     return "Invalid file type. Please upload JPG or PNG.", 400
