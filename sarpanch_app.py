@@ -1,14 +1,14 @@
-import os, uuid, sqlite3
+import os, uuid, sqlite3, base64
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session
+from twilio.twiml.messaging_response import MessagingResponse
 
 # ── Config ───────────────────────────────────────────────────
 VILLAGE_NAME  = os.environ.get("VILLAGE_NAME",  "Kolukonda Village")
 SARPANCH_NAME = os.environ.get("SARPANCH_NAME", "Kothi Sravanthi Praveen")
 MANDAL        = os.environ.get("MANDAL",        "Jangaon Mandal")
-DISTRICT      = os.environ.get("DISTRICT",      "Nalgonda District, Telangana")
+DISTRICT      = os.environ.get("DISTRICT",      "Jangaon District, Telangana")
 DATABASE_URL  = os.environ.get("DATABASE_URL",  "")
-PHOTO_B64     = "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"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
@@ -34,13 +34,38 @@ def init_db():
     u = "updated" if db_type == "pg" else "updated_at"
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
+    
+    # Add photos table for sarpanch photos
     cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
+    cur.execute(f"CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    
     conn.commit()
     conn.close()
     print(f"✅ Database ready ({db_type})")
+
+def get_setting(key, default=None):
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = "%s" if db_type == "pg" else "?"
+    cur.execute(f"SELECT value FROM settings WHERE key={p}", (key,))
+    row = cur.fetchone()
+    conn.close()
+    if row:
+        return row["value"] if isinstance(row, dict) else row[0]
+    return default
+
+def set_setting(key, value):
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = "%s" if db_type == "pg" else "?"
+    # Use upsert pattern
+    cur.execute(f"DELETE FROM settings WHERE key={p}", (key,))
+    cur.execute(f"INSERT INTO settings (key, value) VALUES ({p}, {p})", (key, value))
+    conn.commit()
+    conn.close()
 
 def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
 def fmt_time(): return datetime.now().strftime("%H:%M")
@@ -121,16 +146,55 @@ def insert_announcement(title, body):
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title,body,now_str()))
     conn.commit(); conn.close()
 
-# ── Bot ───────────────────────────────────────────────────────
-MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
-    "1 Register Complaint\n2 Request Certificate\n3 Track Status\n"
-    "4 Government Schemes\n5 Development Works\n6 Announcements\n7 Office Info\n\n"
-    "Telugu lo kavali ante *telugu* ani pampandi.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+# ── Photo Upload Functions ─────────────────────────────────────
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
-MENU_TE = ("Namaskaram! *{v}* Grama Panchayatiki swaagatam\nSarpanch: *{s}*\n\n"
-    "1 Firyaadu Namodhu\n2 Certificate Abhyartana\n3 Sthiti Tanikhee\n"
-    "4 Prabhutvam Pathakaalu\n5 Abhivruddhi Panulu\n6 Prakatanalu\n7 Karyalayam\n\n"
-    "For English type *english*").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def get_sarpanch_photo():
+    """Get sarpanch photo from database"""
+    photo = get_setting("sarpanch_photo", None)
+    if photo:
+        return photo
+    # Return a placeholder if no photo uploaded
+    return ""
+
+def get_sarpanch_avatar():
+    """Get sarpanch avatar from database"""
+    avatar = get_setting("sarpanch_avatar", None)
+    if avatar:
+        return avatar
+    return ""
+
+# ── Bot ───────────────────────────────────────────────────────
+MENU_EN = (
+    "🙏 Namaskaram! Welcome to\n"
+    "*{v} Gram Panchayat*\n"
+    "Sarpanch: *{s}*\n\n"
+    "1️⃣  Register a Complaint\n"
+    "2️⃣  Request a Certificate\n"
+    "3️⃣  Track Complaint / Status\n"
+    "4️⃣  Government Schemes\n"
+    "5️⃣  Development Works\n"
+    "6️⃣  Announcements\n"
+    "7️⃣  Office Info\n\n"
+    "తెలుగులో కావాలంటే *telugu* అని పంపండి."
+).format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+
+MENU_TE = (
+    "🙏 నమస్కారం! స్వాగతం\n"
+    "*{v} గ్రామ పంచాయతీ*\n"
+    "సర్పంచ్: *{s}*\n\n"
+    "1️⃣  ఫిర్యాదు నమోదు చేయండి\n"
+    "2️⃣  సర్టిఫికెట్ అభ్యర్థన\n"
+    "3️⃣  ఫిర్యాదు స్థితి తనిఖీ\n"
+    "4️⃣  ప్రభుత్వ పథకాలు\n"
+    "5️⃣  అభివృద్ధి పనులు\n"
+    "6️⃣  ప్రకటనలు\n"
+    "7️⃣  కార్యాలయ సమాచారం\n\n"
+    "For English type *english*"
+).format(v=VILLAGE_NAME,s=SARPANCH_NAME)
 
 COMPLAINT_CATS = {"1":"Road / Pothole","2":"Water Supply","3":"Electricity","4":"Drainage","5":"Ration Shop","6":"Land Dispute","7":"Other"}
 CERT_TYPES = {"1":"Income Certificate","2":"Caste Certificate","3":"Residence Certificate","4":"Birth Certificate","5":"Death Certificate","6":"Agriculture Land Certificate"}
@@ -145,16 +209,22 @@ def get_menu(ctx): return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 def bot_reply(user_msg, ctx):
     msg=user_msg.strip(); ml=msg.lower()
     state=ctx.get("state","idle"); lang=ctx.get("lang","en")
-    if ml=="telugu": ctx.update({"lang":"te","state":"idle"}); return MENU_TE,ctx
+    if ml in ("telugu","తెలుగు"): ctx.update({"lang":"te","state":"idle"}); return MENU_TE,ctx
     if ml=="english": ctx.update({"lang":"en","state":"idle"}); return MENU_EN,ctx
     if ml in ("menu","home","back","hi","hello","start","help"): ctx={"state":"idle","lang":lang}; return get_menu(ctx),ctx
 
     if state=="idle":
-        if ml in ("1","complaint"): ctx["state"]="c_name"; return "Register Complaint\n\nEnter your full name:",ctx
+        if ml in ("1","complaint","ఫిర్యాదు"):
+            ctx["state"]="c_name"
+            if lang=="te": return "📋 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:",ctx
+            return "📋 Register Complaint\n\nEnter your full name:",ctx
         if ml in ("2","certificate"):
             cats="\n".join(f"{k}. {v}" for k,v in CERT_TYPES.items()); ctx["state"]="cert_type"
             return f"Certificate Request\n\nSelect type:\n{cats}",ctx
-        if ml in ("3","track","status"): ctx["state"]="track_id"; return "Enter your Reference ID:\n(e.g. CMP-A3F9B2)",ctx
+        if ml in ("3","track","status","స్థితి"):
+            ctx["state"]="track_id"
+            if lang=="te": return "🔍 మీ Reference ID నమోదు చేయండి:\n(ఉదా: CMP-A3F9B2)",ctx
+            return "🔍 Enter your Reference ID:\n(e.g. CMP-A3F9B2)",ctx
         if ml in ("4","schemes"):
             lines=[f"{n}: {d}" for n,d in SCHEMES]; ctx["state"]="idle"
             return "Government Schemes\n\n"+"\n\n".join(lines)+"\n\nType menu.",ctx
@@ -239,7 +309,7 @@ CHAT_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'Inter',sans-serif;background:#d9dbdd;min-height:100vh;display:flex;align-items:center;justify-content:center}
 .phone{width:390px;height:760px;background:#fff;border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden}
 .header{background:#4a7c59;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-.avatar{width:44px;height:44px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.5)}
+.avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;object-position:top;border:2px solid rgba(255,255,255,.7);box-shadow:0 2px 8px rgba(0,0,0,.2)}
 .header-text h2{color:#fff;font-size:14px;font-weight:600}
 .header-text p{color:#c5dfc9;font-size:11px}
 .chat{flex:1;overflow-y:auto;padding:12px 10px;background:#efeae2;display:flex;flex-direction:column;gap:6px}
@@ -290,9 +360,9 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
-.tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
+.tb{background:var(--green);color:#fff;padding:12px 24px;min-height:90px;display:flex;align-items:center;justify-content:space-between}
 .tl{display:flex;align-items:center;gap:14px}
-.ta{width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
+.ta{width:0;height:0;display:none}
 .tb h1{font-size:15px;font-weight:700}
 .ts{font-size:11px;opacity:.75}
 .stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
@@ -323,8 +393,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 </style></head><body>
 <div class="tb">
   <div class="tl">
-    <img class="ta" src="data:image/jpeg;base64,{{ photo }}" alt="">
-    <div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ sarpanch }} · {{ mandal }}</div></div>
+    <div>
+      <h1 style="font-size:18px;font-weight:700">{{ village }} — సర్పంచ్ Dashboard</h1>
+      <div class="ts">{{ sarpanch }} · {{ mandal }}</div>
+    </div>
   </div>
   <div style="font-size:12px;opacity:.8">Auto-refresh 20s · {{ now }}</div>
 </div>
@@ -335,14 +407,47 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sc c4"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
   <div class="sc c5"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
 </div>
+
+<!-- Sarpanch Profile with Photo Upload -->
+<div class="sec" style="margin:18px 24px;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+  <div style="display:flex;align-items:center;gap:20px;padding:20px 24px;flex-wrap:wrap">
+    {% if dash_photo %}
+    <img src="data:image/jpeg;base64,{{ dash_photo }}" alt="Sarpanch" style="width:120px;height:120px;border-radius:12px;object-fit:cover;object-position:top;border:3px solid #4a7c59;box-shadow:0 4px 12px rgba(0,0,0,.15)">
+    {% else %}
+    <div style="width:120px;height:120px;border-radius:12px;background:#e0e7ff;border:3px solid #4a7c59;display:flex;align-items:center;justify-content:center;color:#6b778c;font-size:12px;text-align:center">No Photo<br>Upload One</div>
+    {% endif %}
+    <div>
+      <div style="font-size:22px;font-weight:700;color:#172b4d">{{ sarpanch }}</div>
+      <div style="font-size:14px;color:#6b778c;margin-top:4px">సర్పంచ్ — {{ village }}</div>
+      <div style="font-size:13px;color:#6b778c;margin-top:2px">{{ mandal }}</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <span style="background:#dcfce7;color:#4a7c59;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600">● Active</span>
+        <span style="background:#dbeafe;color:#0070f3;padding:3px 10px;border-radius:20px;font-size:12px">BRS Party</span>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Photo Upload Form -->
+  <div style="padding:0 24px 20px 24px;border-top:1px solid var(--border)">
+    <form method="post" action="/upload_photo" enctype="multipart/form-data" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <label style="background:#4a7c59;color:#fff;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600">📸 Choose Photo
+        <input type="file" name="photo" accept="image/*" style="display:none" onchange="this.form.submit()">
+      </label>
+      <span style="font-size:11px;color:#6b778c">Upload JPG/PNG (max 5MB)</span>
+    </form>
+  </div>
+</div>
+
 <div class="sec">
   <div class="sh">Complaints Queue <span>Pending + In Review + In Progress</span></div>
   {% set ac=complaints|selectattr("status","in",["pending","in_review","in_progress"])|list %}
-  {% if ac %}<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% if ac %}
+  <div class="desktop-only"><table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
     <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.category }}</td><td>{{ x.location }}</td>
+    <td>{{ x.category }}</td>
+    <td>{{ x.location }}</td>
     <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
     <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
     <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
@@ -352,17 +457,40 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
       <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>{% endfor %}</tbody></table>
+  </tr>{% endfor %}</tbody></table></div>
+  <div class="mobile-only">
+  {% for x in ac %}
+  <div class="complaint-card {{ x.priority }}">
+    <div class="card-row">
+      <span class="card-id">{{ x.id }}</span>
+      <span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span>
+    </div>
+    <div class="card-name">{{ x.name }}</div>
+    <div class="card-detail" style="margin-top:4px">📋 {{ x.category }} &nbsp;|&nbsp; 📍 {{ x.location }}</div>
+    <div class="card-detail" style="margin-top:2px">⚡ {{ x.priority|upper }} &nbsp;|&nbsp; 📅 {{ x.filed_at }}</div>
+    <div class="card-detail" style="margin-top:2px;color:#888;font-size:11px">📞 {{ x.phone }}</div>
+    <div class="card-actions">
+      {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">🔍 Review</a>{% endif %}
+      {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">▶ Start</a>{% endif %}
+      {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">✓ Done</a>{% endif %}
+      <a href="/caction/{{ x.id }}/rejected" class="btn br">✕ Reject</a>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
   {% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
+
 <div class="sec">
   <div class="sh">Certificate Requests <span>Pending + Processing</span></div>
   {% set ac=certs|selectattr("status","in",["pending","processing"])|list %}
-  {% if ac %}<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% if ac %}
+  <div class="desktop-only"></table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
     <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.type }}</td><td>{{ x.purpose }}</td>
+    <td>{{ x.type }}</td>
+    <td>{{ x.purpose }}</td>
     <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
     <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
     <td><div class="acts">
@@ -370,14 +498,35 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
       <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>{% endfor %}</tbody></table>
+  </tr>{% endfor %}</tbody></table></div>
+  <div class="mobile-only">
+  {% for x in ac %}
+  <div class="complaint-card medium">
+    <div class="card-row">
+      <span class="card-id">{{ x.id }}</span>
+      <span class="badge {{ x.status }}">{{ x.status.title() }}</span>
+    </div>
+    <div class="card-name">{{ x.name }}</div>
+    <div class="card-detail" style="margin-top:4px">📄 {{ x.type }}</div>
+    <div class="card-detail" style="margin-top:2px">🎯 {{ x.purpose }}</div>
+    <div class="card-detail" style="margin-top:2px">📅 {{ x.filed_at }} | 📞 {{ x.phone }}</div>
+    <div class="card-actions">
+      {% if x.status=='pending' %}<a href="/certaction/{{ x.id }}/processing" class="btn bb">🔄 Process</a>{% endif %}
+      {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">✓ Ready</a>{% endif %}
+      <a href="/certaction/{{ x.id }}/rejected" class="btn br">✕ Reject</a>
+    </div>
+  </div>
+  {% endfor %}
+  </div>
   {% else %}<div class="empty">No pending requests.</div>{% endif %}
 </div>
+
 <div class="sec">
   <div class="sh">Development Works</div>
-  {% if works %}<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+  {% if works %}</table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
   {% for w in works %}<tr>
-    <td><strong>{{ w.id }}</strong></td><td>{{ w.title }}</td>
+    <td><strong>{{ w.id }}</strong></td>
+    <td>{{ w.title }}</td>
     <td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
     <td style="font-size:11px;color:#888">{{ w.updated }}</td>
     <td><div class="acts">
@@ -392,11 +541,13 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
     <button type="submit">+ Add</button>
   </form>
 </div>
+
 <div class="sec">
   <div class="sh">Announcements</div>
-  {% if announcements %}<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+  {% if announcements %}<td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}<tr>
-    <td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td>
+    <td><strong>{{ a.title }}</strong></td>
+    <td>{{ a.body }}</td>
     <td style="font-size:11px;color:#888">{{ a.date }}</td>
   </tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty">No announcements.</div>{% endif %}
@@ -406,20 +557,61 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
     <button type="submit">Post</button>
   </form>
 </div>
+
 <div class="sec">
   <div class="sh">Resolved / Closed</div>
   {% set dc=complaints|selectattr("status","in",["resolved","rejected"])|list %}
   {% set dce=certs|selectattr("status","in",["ready","rejected"])|list %}
   {% if dc or dce %}<table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th></tr></thead><tbody>
-  {% for x in dc %}<tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td></tr>{% endfor %}
-  {% for x in dce %}<tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td></tr>{% endfor %}
+  {% for x in dc %}<tr>
+    <td>{{ x.id }}</td>
+    <td>Complaint</td>
+    <td>{{ x.name }}</td>
+    <td>{{ x.category }}</td>
+    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+  </tr>{% endfor %}
+  {% for x in dce %}<tr>
+    <td>{{ x.id }}</td>
+    <td>Certificate</td>
+    <td>{{ x.name }}</td>
+    <td>{{ x.type }}</td>
+    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+  </tr>{% endfor %}
   </tbody></table>
   {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
+
+<style>
+@media(max-width:768px){
+  .stats{gap:8px;padding:12px 12px 0}
+  .sc{min-width:80px;padding:10px 12px}
+  .sc .val{font-size:22px}
+  .sec{margin:12px}
+  .sh{padding:10px 14px;font-size:13px;flex-direction:column;gap:4px}
+  .desktop-only{display:none !important}
+  .mobile-only{display:block !important}
+  .complaint-card{background:#fff;border-radius:12px;padding:14px;margin:12px;box-shadow:0 2px 8px rgba(0,0,0,.08);border-left:4px solid var(--amber)}
+  .complaint-card.high{border-left-color:var(--red)}
+  .complaint-card.medium{border-left-color:var(--amber)}
+  .complaint-card.low{border-left-color:var(--green)}
+  .card-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+  .card-id{font-size:11px;color:var(--sub);font-weight:600;background:#f0f0f0;padding:2px 8px;border-radius:12px}
+  .card-name{font-size:16px;font-weight:700;color:var(--text);margin-bottom:6px}
+  .card-detail{font-size:12px;color:var(--sub);margin-top:4px}
+  .card-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .card-actions .btn{flex:1;text-align:center;padding:6px 12px}
+  table{display:none !important}
+}
+@media(min-width:769px){
+  .mobile-only{display:none !important}
+  .desktop-only{display:block !important}
+}
+</style>
 </body></html>"""
 
 # ── Routes ────────────────────────────────────────────────────
-CHIPS = ["1 Complaint","2 Certificate","3 Track Status","4 Schemes","5 Works","6 Announcements"]
+CHIPS_EN = ["1️⃣ Complaint","2️⃣ Certificate","3️⃣ Track Status","4️⃣ Schemes","5️⃣ Works","6️⃣ Announcements"]
+CHIPS_TE = ["1️⃣ ఫిర్యాదు","2️⃣ సర్టిఫికెట్","3️⃣ స్థితి తనిఖీ","4️⃣ పథకాలు","5️⃣ పనులు","6️⃣ ప్రకటనలు"]
 
 @app.route("/", methods=["GET","POST"])
 def chat_view():
@@ -427,7 +619,8 @@ def chat_view():
         session["chat"]=[("bot",MENU_EN,fmt_time())]
         session["ctx"]={"state":"idle","lang":"en"}
         session.modified=True
-    chips=CHIPS if session["ctx"].get("state")=="idle" else []
+    lang=session["ctx"].get("lang","en")
+    chips=(CHIPS_TE if lang=="te" else CHIPS_EN) if session["ctx"].get("state")=="idle" else []
     if request.method=="POST":
         um=request.form.get("message","").strip()
         if not um: return redirect("/")
@@ -436,10 +629,17 @@ def chat_view():
         session["ctx"]=nc
         session["chat"].append(("bot",reply,fmt_time()))
         session.modified=True
-        chips=CHIPS if session["ctx"].get("state")=="idle" else []
+        lang=session["ctx"].get("lang","en")
+        chips=(CHIPS_TE if lang=="te" else CHIPS_EN) if session["ctx"].get("state")=="idle" else []
     session["chat"]=session["chat"][-80:]
-    return render_template_string(CHAT_HTML,chat=session["chat"],chips=chips,
-        village=VILLAGE_NAME,sarpanch=SARPANCH_NAME,photo=PHOTO_B64)
+    
+    # Get avatar photo from database
+    avatar_photo = get_sarpanch_avatar()
+    if not avatar_photo:
+        avatar_photo = ""  # Empty, will show placeholder
+    
+    return render_template_string(CHAT_HTML, chat=session["chat"], chips=chips,
+        village=VILLAGE_NAME, sarpanch=SARPANCH_NAME, photo=avatar_photo)
 
 @app.route("/sarpanch")
 def dashboard():
@@ -451,10 +651,41 @@ def dashboard():
         works=sum(1 for x in wo if x["status"] in ("pending","in_progress")),
         hi=sum(1 for x in ac if x.get("priority")=="high" and x["status"] not in ("resolved","rejected")),
     )
-    return render_template_string(DASH_HTML,complaints=ac,certs=ce,works=wo,
-        announcements=an,village=VILLAGE_NAME,sarpanch=SARPANCH_NAME,
-        mandal=MANDAL,now=datetime.now().strftime("%d %b %Y, %H:%M"),
-        c=counts,photo=PHOTO_B64)
+    
+    # Get dashboard photo from database
+    dash_photo = get_sarpanch_photo()
+    
+    return render_template_string(DASH_HTML, complaints=ac, certs=ce, works=wo,
+        announcements=an, village=VILLAGE_NAME, sarpanch=SARPANCH_NAME,
+        mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"),
+        c=counts, dash_photo=dash_photo)
+
+@app.route("/upload_photo", methods=["POST"])
+def upload_photo():
+    import base64
+    
+    if 'photo' not in request.files:
+        return "No file uploaded", 400
+    
+    file = request.files['photo']
+    if file.filename == '':
+        return "No file selected", 400
+    
+    if file and allowed_file(file.filename):
+        # Read and convert to base64
+        photo_data = base64.b64encode(file.read()).decode('utf-8')
+        
+        # Determine if it's for dashboard or avatar
+        photo_type = request.form.get("photo_type", "dashboard")
+        
+        if photo_type == "dashboard":
+            set_setting("sarpanch_photo", photo_data)
+        else:
+            set_setting("sarpanch_avatar", photo_data)
+        
+        return redirect("/sarpanch")
+    
+    return "Invalid file type. Please upload JPG or PNG.", 400
 
 @app.route("/debug")
 def debug():
@@ -488,52 +719,14 @@ def announce():
     if t and b: insert_announcement(t,b)
     return redirect("/sarpanch")
 
-VERIFY_TOKEN   = os.environ.get("VERIFY_TOKEN", "kolukonda2024")
-META_TOKEN     = os.environ.get("META_TOKEN", "")
-PHONE_NUM_ID   = os.environ.get("PHONE_NUMBER_ID", "1173815852473279")
-
-def send_meta_whatsapp(to, text):
-    import requests
-    if not META_TOKEN:
-        print("META_TOKEN not set")
-        return
-    requests.post(
-        f"https://graph.facebook.com/v19.0/{PHONE_NUM_ID}/messages",
-        headers={"Authorization": f"Bearer {META_TOKEN}", "Content-Type": "application/json"},
-        json={"messaging_product":"whatsapp","to":to,"type":"text","text":{"body":text}}
-    )
-
-@app.route("/whatsapp", methods=["GET","POST"])
+@app.route("/whatsapp",methods=["POST"])
 def whatsapp():
-    # Meta webhook verification
-    if request.method == "GET":
-        if request.args.get("hub.verify_token") == VERIFY_TOKEN:
-            return request.args.get("hub.challenge","")
-        return "Invalid token", 403
-
-    # Incoming message from Meta
-    try:
-        data = request.json
-        entry = data.get("entry",[{}])[0]
-        changes = entry.get("changes",[{}])[0]
-        value = changes.get("value",{})
-        messages = value.get("messages",[])
-        if not messages:
-            return "OK", 200
-        msg = messages[0]
-        sender = msg.get("from","")
-        if msg.get("type") != "text":
-            return "OK", 200
-        user_msg = msg["text"]["body"].strip()
-        if not user_msg:
-            return "OK", 200
-        if sender not in whatsapp_sessions:
-            whatsapp_sessions[sender] = {"state":"idle","lang":"en"}
-        reply, whatsapp_sessions[sender] = bot_reply(user_msg, whatsapp_sessions[sender])
-        send_meta_whatsapp(sender, reply)
-    except Exception as e:
-        print(f"Webhook error: {e}")
-    return "OK", 200
+    um=request.form.get("Body","").strip(); sender=request.form.get("From","")
+    if not um: return "",204
+    if sender not in whatsapp_sessions: whatsapp_sessions[sender]={"state":"idle","lang":"en"}
+    reply,whatsapp_sessions[sender]=bot_reply(um,whatsapp_sessions[sender])
+    resp=MessagingResponse(); resp.message(reply)
+    return str(resp),200,{"Content-Type":"text/xml"}
 
 @app.route("/sessions")
 def sessions():
