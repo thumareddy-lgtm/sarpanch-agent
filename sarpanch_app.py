@@ -1,6 +1,6 @@
 import os, uuid, sqlite3, base64
 from datetime import datetime
-from flask import Flask, request, render_template_string, redirect, session, url_for
+from flask import Flask, request, render_template_string, redirect, session
 from twilio.twiml.messaging_response import MessagingResponse
 
 # ── Config ───────────────────────────────────────────────────
@@ -12,7 +12,7 @@ DATABASE_URL  = os.environ.get("DATABASE_URL",  "")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 whatsapp_sessions = {}
 
 # ── Database ─────────────────────────────────────────────────
@@ -36,6 +36,7 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
+    # Create all tables including settings
     cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
@@ -65,7 +66,8 @@ def get_setting(key, default=None):
             return row["value"] if isinstance(row, dict) else row[0]
     except Exception as e:
         print(f"Error getting setting: {e}")
-    conn.close()
+    finally:
+        conn.close()
     return default
 
 def set_setting(key, value):
@@ -81,7 +83,8 @@ def set_setting(key, value):
         conn.commit()
     except Exception as e:
         print(f"Error setting setting: {e}")
-    conn.close()
+    finally:
+        conn.close()
 
 def allowed_file(filename):
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
@@ -206,7 +209,6 @@ def bot_reply(user_msg, ctx):
     msg=user_msg.strip(); ml=msg.lower()
     state=ctx.get("state","idle"); lang=ctx.get("lang","en")
     
-    # Language switching
     if ml in ("telugu","తెలుగు"):
         ctx.update({"lang":"te","state":"idle"})
         return MENU_TE, ctx
@@ -312,10 +314,6 @@ def bot_reply(user_msg, ctx):
     ctx["state"]="idle"
     return "Let's start over.\n\n"+get_menu(ctx),ctx
 
-# ── HTML Templates (simplified for brevity, but functional) ──
-# Note: Full HTML templates are included but shortened here for space
-# The actual working HTML is in your current file
-
 # ── Routes ────────────────────────────────────────────────────
 CHIPS_EN = ["1️⃣ Complaint","2️⃣ Certificate","3️⃣ Track Status","4️⃣ Schemes","5️⃣ Works","6️⃣ Announcements"]
 CHIPS_TE = ["1️⃣ ఫిర్యాదు","2️⃣ సర్టిఫికెట్","3️⃣ స్థితి తనిఖీ","4️⃣ పథకాలు","5️⃣ పనులు","6️⃣ ప్రకటనలు"]
@@ -391,7 +389,6 @@ body{font-family:'Inter',sans-serif;background:#d9dbdd;min-height:100vh;display:
 </body></html>""", chat=session["chat"], chips=chips,
         village=VILLAGE_NAME, sarpanch=SARPANCH_NAME)
 
-# Simplified dashboard route for now - will work
 @app.route("/sarpanch")
 def dashboard():
     ac = all_complaints()
@@ -405,6 +402,7 @@ def dashboard():
         works=sum(1 for x in wo if x["status"] in ("pending","in_progress")),
         hi=sum(1 for x in ac if x.get("priority")=="high" and x["status"] not in ("resolved","rejected")),
     )
+    dash_photo = get_setting("sarpanch_photo", "")
     return render_template_string("""
 <!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -456,6 +454,11 @@ th,td{padding:10px 14px;text-align:left;font-size:13px;border-bottom:1px solid v
 <div class="sec">
   <div class="sh">📸 Update Sarpanch Photo</div>
   <div style="padding:20px">
+    {% if dash_photo %}
+    <img src="data:image/jpeg;base64,{{ dash_photo }}" alt="Sarpanch" style="width:100px;height:100px;border-radius:50%;object-fit:cover;margin-bottom:15px"><br>
+    {% else %}
+    <div style="width:100px;height:100px;border-radius:50%;background:#e0e7ff;display:flex;align-items:center;justify-content:center;margin-bottom:15px">📷</div>
+    {% endif %}
     <form method="post" action="/upload_photo" enctype="multipart/form-data">
       <input type="file" name="photo" accept="image/*" required style="margin-bottom:10px">
       <br>
@@ -486,7 +489,7 @@ th,td{padding:10px 14px;text-align:left;font-size:13px;border-bottom:1px solid v
 {% endfor %}</tbody></table></div>
 
 <div class="sec"><div class="sh">Development Works</div>
-<table><thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+</table><thead><tr><th>Title</th><th>Status</th><th>Actions</th></tr></thead><tbody>
 {% for w in works %}
 <tr><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
 <td>{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
@@ -503,7 +506,7 @@ th,td{padding:10px 14px;text-align:left;font-size:13px;border-bottom:1px solid v
 <form method="post" action="/announce" class="af"><input name="title" placeholder="Title"><input name="body" placeholder="Message"><button type="submit">Post</button></form></div>
 </body></html>""", complaints=ac, certs=ce, works=wo,
         announcements=an, village=VILLAGE_NAME, sarpanch=SARPANCH_NAME,
-        mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"), c=counts)
+        mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"), c=counts, dash_photo=dash_photo)
 
 @app.route("/upload_photo", methods=["POST"])
 def upload_photo():
@@ -564,7 +567,7 @@ def whatsapp():
 @app.route("/sessions")
 def sessions():
     rows = "".join(f"<tr><td>{p}</td><td>{c.get('state','?')}</td><td>{c.get('lang','en')}</td></tr>" for p,c in whatsapp_sessions.items())
-    return f"<html><body style='font-family:monospace;padding:20px'><h3>Sessions ({len(whatsapp_sessions)})</h3><table border=1 cellpadding=8><tr><th>Phone</th><th>State</th><th>Lang</th></tr>{rows or '<tr><td colspan=3>None</td></tr>'}</table><br><a href='/sarpanch'>Dashboard</a></body></html>"
+    return f"<html><body style='font-family:monospace;padding:20px'><h3>Sessions ({len(whatsapp_sessions)})</h3><table border=1 cellpadding=8><tr><th>Phone</th><th>State</th><th>Lang</th></tr>{rows or '<tr><td colspan=3>None</td></tr>'}<td><br><a href='/sarpanch'>Dashboard</a></body></html>"
 
 if __name__=="__main__":
     init_db()
