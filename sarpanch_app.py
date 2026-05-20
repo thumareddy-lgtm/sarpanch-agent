@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD WITH FILTERS AND MOBILE RESPONSIVE ─────────────
+# ── DASHBOARD WITH FULL SECTIONS ─────────────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -788,6 +788,7 @@ def dashboard():
                 if len(x) > 7 and x[7] in ('resolved', 'rejected'):
                     resolved_count += 1
         
+        # Process certificates
         certificates = []
         for x in ce:
             if isinstance(x, dict):
@@ -801,6 +802,7 @@ def dashboard():
                     'status': x[6] if len(x) > 6 else 'pending', 'filed_at': x[7] if len(x) > 7 else ''
                 })
         
+        # Process works
         works = []
         for w in wo:
             if isinstance(w, dict):
@@ -814,6 +816,7 @@ def dashboard():
                     'updated': w[3] if len(w) > 3 else ''
                 })
         
+        # Process announcements
         announcements = []
         for a in an:
             if isinstance(a, dict):
@@ -1044,13 +1047,13 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:200px;height:200px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59;display:block}
+.photo-preview{width:150px;height:150px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59;display:block}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
 button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.photo-preview{width:150px;height:150px}}
+@media (max-width:600px){.photo-preview{width:100px;height:100px}}
 </style>
 </head>
 <body>
@@ -1182,7 +1185,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .tl{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
-.avatar{width:80px;height:80px;object-fit:cover;border:3px solid rgba(255,255,255,.4)}
+.avatar{width:120px;height:120px;object-fit:cover;border:3px solid rgba(255,255,255,.4);border-radius:10px}
 .nav-links{display:flex;gap:15px;flex-wrap:wrap}
 .nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
@@ -1215,7 +1218,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 .br{background:var(--red);color:#fff}.ba{background:var(--amber);color:#fff}
 .empty{text-align:center;padding:28px;color:var(--sub);font-size:13px}
 .map-link{color:#1a73e8;text-decoration:none}
-@media (max-width:768px){.stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}.tb{flex-direction:column;gap:10px;text-align:center}.tl{justify-content:center}.nav-links{justify-content:center}}
+@media (max-width:768px){
+.avatar{width:80px;height:80px}
+.stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
+.tb{flex-direction:column;gap:10px;text-align:center}.tl{justify-content:center}.nav-links{justify-content:center}
+}
 </style>
 </head>
 <body>
@@ -1231,11 +1238,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div>
 </div>
 <div class="stats">
-<div class="sc c1 {% if filter_status == 'pending' or filter_status == 'in_review' or filter_status == 'in_progress' %}active{% endif %}" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2 {% if filter_status == 'pending' and filter_priority == 'ALL' %}active{% endif %}" onclick="window.location.href='?filter_status=pending&filter_priority=ALL'"><div class="val">{{ c.cert }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2" onclick="window.location.href='?filter_status=pending&filter_priority=ALL'"><div class="val">{{ c.cert }}</div><div class="lbl">Cert Requests</div></div>
 <div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL'"><div class="val">{{ c.res }}</div><div class="lbl">Resolved</div></div>
 <div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5 {% if filter_priority == 'high' %}active{% endif %}" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
 </div>
 <div class="filter-bar">
 <span style="font-size:12px;color:#666">Filter by Status:</span>
@@ -1275,10 +1282,78 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </table>
 {% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
-<div class="sec"><div class="sh">✅ Resolved Complaints</div>
-{% if resolved_complaints %}<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
-{% for x in resolved_complaints %}<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>{% endfor %}
-</tbody></table>{% else %}<div class="empty">No resolved complaints.</div>{% endif %}</div>
+<div class="sec">
+<div class="sh">📋 Certificate Requests</div>
+{% if active_certs %}
+<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+{% for x in active_certs %}
+<tr>
+<td>{{ loop.index }}</td>
+<td><strong>{{ x.id }}</strong></td>
+<td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
+<td>{{ x.type }}</td>
+<td>{{ x.purpose }}</td>
+<td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
+<td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><div class="acts">
+{% if x.status=='pending' %}<a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a>{% endif %}
+{% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
+<a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
+</div></td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
+</div>
+<div class="sec">
+<div class="sh">🛠️ Development Works</div>
+{% if works %}
+<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+{% for w in works %}
+<tr>
+<td><strong>{{ w.id }}</strong></td>
+<td>{{ w.title }}</td>
+<td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td style="font-size:11px;color:#888">{{ w.updated }}</td>
+<td><div class="acts">
+{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
+{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
+</div></td>
+</tr>
+{% endfor %}
+</tbody><tr>
+{% else %}<div class="empty">No works added.</div>{% endif %}
+<form method="post" action="/addwork" class="wf">
+<input type="text" name="title" placeholder="Add new work" required>
+<button type="submit">+ Add Work</button>
+</form>
+</div>
+<div class="sec">
+<div class="sh">📢 Announcements</div>
+{% if announcements %}
+<td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+{% for a in announcements %}
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No announcements.</div>{% endif %}
+<form method="post" action="/announce" class="af">
+<input type="text" name="title" placeholder="Title" required>
+<input type="text" name="body" placeholder="Message..." required>
+<button type="submit">Post Announcement</button>
+</form>
+</div>
+<div class="sec">
+<div class="sh">✅ Resolved / Closed Items</div>
+{% if resolved_complaints %}
+</table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
+{% for x in resolved_complaints %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No resolved items.</div>{% endif %}
+</div>
 <script>
 function sortTable(colIndex){
 var table=document.querySelector('.sec table');
