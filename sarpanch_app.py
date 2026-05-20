@@ -32,6 +32,35 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
 
+def add_missing_columns():
+    """Add missing location columns to complaints table if they don't exist"""
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    
+    columns = [
+        ('location_lat', 'REAL' if db_type == 'sqlite' else 'DOUBLE PRECISION'),
+        ('location_lng', 'REAL' if db_type == 'sqlite' else 'DOUBLE PRECISION'),
+        ('location_address', 'TEXT'),
+        ('maps_link', 'TEXT'),
+        ('media_type', 'TEXT'),
+        ('media_url', 'TEXT')
+    ]
+    
+    for col, dtype in columns:
+        try:
+            if db_type == 'pg':
+                cur.execute(f"ALTER TABLE complaints ADD COLUMN IF NOT EXISTS {col} {dtype}")
+                print(f" Added column: {col}")
+            else:
+                cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} {dtype}")
+                print(f" Added column: {col}")
+        except Exception as e:
+            print(f" Column {col} already exists or error: {e}")
+    
+    conn.commit()
+    conn.close()
+    print(" Database columns check complete")
+
 def init_db():
     conn, db_type = get_db()
     cur = conn.cursor()
@@ -39,13 +68,16 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT)")
+    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
     conn.commit()
     conn.close()
     print(f" Database ready ({db_type})")
+    
+    # Add missing columns to complaints table
+    add_missing_columns()
 
 def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
 def fmt_time(): return datetime.now().strftime("%H:%M")
@@ -202,7 +234,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
 def get_menu(ctx): return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── FIXED bot_reply FUNCTION ─────────────────────────────────
+# ── MAIN BOT REPLY FUNCTION ─────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -336,7 +368,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         reply += "\n\nType *menu* for main menu"
         
-        # CRITICAL: Reset session to idle
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
     
     # CERTIFICATE FLOW
@@ -680,7 +711,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
       <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>
+  <tr>
   {% endfor %}</tbody></table>
   {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
 </div>
@@ -714,7 +745,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
   <div class="sh">📢 Announcements</div>
   {% if announcements %}
-  <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+  </table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}
   <tr>
     <td><strong>{{ a.title }}</strong></td>
