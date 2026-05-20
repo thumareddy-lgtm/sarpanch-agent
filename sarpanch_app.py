@@ -86,9 +86,13 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
 
+def get_placeholder(db_type):
+    return "%s" if db_type == "pg" else "?"
+
 def init_db():
     conn, db_type = get_db()
     cur = conn.cursor()
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
@@ -100,9 +104,9 @@ def init_db():
     cur.execute(f"CREATE TABLE IF NOT EXISTS sarpanch_users (id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT, village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT)")
     
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
-    cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
+    cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
-        cur.execute("INSERT INTO sarpanch_users (username, password, village_name, phone, email, photo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        cur.execute(f"INSERT INTO sarpanch_users (username, password, village_name, phone, email, photo, created_at) VALUES ({p},{p},{p},{p},{p},{p},{p})",
                     ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', '', now_str()))
     
     conn.commit()
@@ -116,7 +120,7 @@ def new_id(prefix=""): return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
 def insert_complaint(c):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,location_lat,location_lng,location_address,maps_link,media_type,media_url,village) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
         (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
@@ -128,7 +132,7 @@ def insert_complaint(c):
 def insert_certificate(c):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
@@ -138,7 +142,7 @@ def insert_certificate(c):
 def get_record(ref_id):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     tbl = "complaints" if ref_id.startswith("CMP") else "certificates"
     cur.execute(f"SELECT *,{u} as updated FROM {tbl} WHERE id={p}", (ref_id,))
@@ -149,7 +153,7 @@ def get_record(ref_id):
 def update_status(table, ref_id, status):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"UPDATE {table} SET status={p},{u}={p} WHERE id={p}", (status, now_str(), ref_id))
     conn.commit()
@@ -185,7 +189,7 @@ def all_works():
 def active_works():
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"SELECT *,{u} as updated FROM works WHERE status IN ({p},{p})", ("pending","in_progress"))
     rows = [dict(r) for r in cur.fetchall()]
@@ -203,7 +207,7 @@ def all_announcements():
 def insert_work(title):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})", (new_id("WORK-"), title, "pending", now_str()))
     conn.commit()
@@ -212,7 +216,7 @@ def insert_work(title):
 def insert_announcement(title, body):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
+    p = get_placeholder(db_type)
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title, body, now_str()))
     conn.commit()
     conn.close()
@@ -220,8 +224,8 @@ def insert_announcement(title, body):
 def get_sarpanch_by_username(username):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
-    cur.execute("SELECT * FROM sarpanch_users WHERE username = ?", (username,))
+    p = get_placeholder(db_type)
+    cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p}", (username,))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -237,8 +241,8 @@ def get_all_sarpanchs():
 def update_sarpanch_photo(username, photo_path):
     conn, db_type = get_db()
     cur = conn.cursor()
-    p = "%s" if db_type == "pg" else "?"
-    cur.execute("UPDATE sarpanch_users SET photo = ? WHERE username = ?", (photo_path, username))
+    p = get_placeholder(db_type)
+    cur.execute(f"UPDATE sarpanch_users SET photo = {p} WHERE username = {p}", (photo_path, username))
     conn.commit()
     conn.close()
 
@@ -585,8 +589,9 @@ def login():
         
         conn, db_type = get_db()
         cur = conn.cursor()
-        p = "%s" if db_type == "pg" else "?"
-        cur.execute("SELECT * FROM sarpanch_users WHERE username = ? AND password = ?", (username, hashed_password))
+        p = get_placeholder(db_type)
+        
+        cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
         user = cur.fetchone()
         conn.close()
         
@@ -633,8 +638,8 @@ def profile():
         
         conn, db_type = get_db()
         cur = conn.cursor()
-        p = "%s" if db_type == "pg" else "?"
-        cur.execute("UPDATE sarpanch_users SET phone = ?, email = ? WHERE username = ?", (phone, email, username))
+        p = get_placeholder(db_type)
+        cur.execute(f"UPDATE sarpanch_users SET phone = {p}, email = {p} WHERE username = {p}", (phone, email, username))
         conn.commit()
         conn.close()
         
@@ -663,22 +668,19 @@ def dashboard():
         for x in ac:
             if isinstance(x, dict):
                 complaint_village = x.get('village', '')
-            else:
-                complaint_village = x[17] if len(x) > 17 else ''
-            
-            if complaint_village != village and complaint_village != '':
-                continue
-            
-            if isinstance(x, dict):
                 status = x.get('status', 'pending')
                 c = x
             else:
+                complaint_village = x[17] if len(x) > 17 else ''
                 status = x[7] if len(x) > 7 else 'pending'
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': x[4], 'location': x[5], 'priority': x[6],
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
+            
+            if complaint_village != village and complaint_village != '':
+                continue
             
             if status in ('pending', 'in_review', 'in_progress'):
                 active_complaints.append(c)
@@ -745,7 +747,8 @@ def view_complaint(cid):
     try:
         conn, db_type = get_db()
         cur = conn.cursor()
-        cur.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+        p = get_placeholder(db_type)
+        cur.execute(f"SELECT * FROM complaints WHERE id = {p}", (cid,))
         row = cur.fetchone()
         conn.close()
         
@@ -784,7 +787,8 @@ def update_status_route():
         notes = request.form.get("notes", "")
         conn, db_type = get_db()
         cur = conn.cursor()
-        cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
+        p = get_placeholder(db_type)
+        cur.execute(f"UPDATE complaints SET status = {p}, notes = {p} WHERE id = {p}", (new_status, notes, ticket_id))
         conn.commit()
         conn.close()
         return redirect(url_for('view_complaint', cid=ticket_id))
@@ -801,7 +805,8 @@ def send_reply_route():
     reply_message = request.form.get("reply_message")
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT phone FROM complaints WHERE id = ?", (ticket_id,))
+    p = get_placeholder(db_type)
+    cur.execute(f"SELECT phone FROM complaints WHERE id = {p}", (ticket_id,))
     result = cur.fetchone()
     conn.close()
     if result:
@@ -874,9 +879,9 @@ def add_sarpanch():
             hashed_password = hashlib.sha256(password.encode()).hexdigest()
             conn, db_type = get_db()
             cur = conn.cursor()
-            p = "%s" if db_type == "pg" else "?"
+            p = get_placeholder(db_type)
             try:
-                cur.execute("INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                cur.execute(f"INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at) VALUES ({p},{p},{p},{p},{p},{p})",
                            (username, hashed_password, village_name, phone, email, now_str()))
                 conn.commit()
                 return redirect(url_for('list_sarpanchs'))
