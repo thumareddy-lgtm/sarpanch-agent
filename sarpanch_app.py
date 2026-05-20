@@ -32,7 +32,6 @@ def allowed_file(filename):
 
 # ── FORCE ADD VILLAGE COLUMN ON STARTUP ──────────────────────
 def force_add_village_column():
-    """Force add village column to complaints table"""
     print("🔧 Checking village column...")
     try:
         if DATABASE_URL:
@@ -350,7 +349,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx): 
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
+# ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -424,7 +423,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "waiting_for_location"
         return "📍 Share your location (📎 → Location) or type village name:", ctx
     
-    # FIXED: Better village detection from text
     if state == "waiting_for_location":
         detected_village = detect_village_from_text(msg)
         if detected_village:
@@ -439,7 +437,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "c_pri"
         return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
     
-    # FIXED: c_pri with proper village handling
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
         print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
@@ -451,7 +448,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
         
-        # Determine village - priority: detected village > typed text > GPS > default
         village = ctx.get("village")
         if not village or village == "Unknown":
             village = ctx.get("location_text", "")
@@ -699,6 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
+# ── DASHBOARD - NO VILLAGE FILTER, SHOWS ALL COMPLAINTS ──────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -719,10 +716,13 @@ def dashboard():
         
         for x in ac:
             if isinstance(x, dict):
-                complaint_village = x.get('village', '')
                 status = x.get('status', 'pending')
-                # Create display location - show village name prominently
-                display_location = x.get('village', '') or x.get('location', 'Not specified')
+                village_name = x.get('village', '')
+                location_text = x.get('location', '')
+                display_location = village_name if village_name else location_text
+                if not display_location:
+                    display_location = 'Not specified'
+                
                 c = {
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': x.get('description', ''),
@@ -730,18 +730,20 @@ def dashboard():
                     'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', '')
                 }
             else:
-                complaint_village = x[17] if len(x) > 17 else ''
                 status = x[7] if len(x) > 7 else 'pending'
-                display_location = complaint_village or (x[5] if len(x) > 5 else 'Not specified')
+                village_name = x[17] if len(x) > 17 else ''
+                location_text = x[5] if len(x) > 5 else ''
+                display_location = village_name if village_name else location_text
+                if not display_location:
+                    display_location = 'Not specified'
+                
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': x[4], 'location': display_location, 'priority': x[6],
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
             
-            if complaint_village != village and complaint_village != '':
-                continue
-            
+            # NO VILLAGE FILTER - Show all complaints regardless of village
             if status in ('pending', 'in_review', 'in_progress'):
                 active_complaints.append(c)
             else:
@@ -831,7 +833,7 @@ def view_complaint(cid):
         else:
             complaint_dict = {
                 'id': row[0], 'name': row[1], 'phone': row[2], 'category': row[3],
-                'description': row[4], 'location': row[5] or row[17] if len(row) > 17 else '',
+                'description': row[4], 'location': row[5] or (row[17] if len(row) > 17 else ''),
                 'priority': row[6], 'status': row[7], 'filed_at': row[8],
                 'maps_link': row[13] if len(row) > 13 else '',
                 'location_lat': row[11] if len(row) > 11 else '',
@@ -1146,7 +1148,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
 .tl{display:flex;align-items:center;gap:14px}
-.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
+.avatar{width:160px;height:160px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
 .tb h1{font-size:15px;font-weight:700}
 .ts{font-size:11px;opacity:.75}
 .stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
