@@ -39,14 +39,13 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    # Main tables
     cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
     conn.commit()
     conn.close()
-    print(f" Database ready ({db_type})")
+    print(f"✅ Database ready ({db_type})")
 
 def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
 def fmt_time(): return datetime.now().strftime("%H:%M")
@@ -131,7 +130,6 @@ def insert_announcement(title, body):
 
 # ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
-    """Reverse geocoding to get village name from coordinates"""
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
         response = requests.get(url, headers={"User-Agent": "SarpanchBot/1.0"}, timeout=5)
@@ -145,7 +143,6 @@ def detect_village_from_coords(lat, lng):
     return None
 
 def detect_village_from_text(text):
-    """Extract village name from text message"""
     villages = ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad']
     text_lower = text.lower()
     for village in villages:
@@ -155,7 +152,6 @@ def detect_village_from_text(text):
 
 # ── WhatsApp API Function ────────────────────────────────────
 def send_whatsapp_message(to_number, message):
-    """Send message using Meta WhatsApp Cloud API"""
     if not META_TOKEN:
         print(" META_TOKEN not set")
         return False
@@ -183,7 +179,7 @@ def send_whatsapp_message(to_number, message):
         print(f" Error: {e}")
         return False
 
-# ── Bot Logic with Location & Voice Support ─────────────────
+# ── Bot Logic ────────────────────────────────────────────────
 MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
     "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
     "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
@@ -225,12 +221,14 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx = {"state": "idle", "lang": lang}
         return get_menu(ctx), ctx
     
-    # Handle media (voice) if present
+    # Handle media (voice)
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
         ctx["state"] = "waiting_for_location"
-        return "🎤 *Voice message received!*\n\n📍 Please share your location (tap 📎 → Location) or type your village name:", ctx
+        if lang == "te":
+            return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
+        return "🎤 *Voice message received!*\n\n📍 Please share your location (tap 📎 → Location):", ctx
     
     # Main menu options
     if state == "idle":
@@ -250,7 +248,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if ml in ("3", "track", "status"):
             ctx["state"] = "track_id"
             if lang == "te":
-                return "🔍 *ఫిర్యాదు/సర్టిఫికెట్ స్థితి*\n\nమీ రిఫరెన్స్ ID టైప్ చేయండి (ఉదా: CMP-A3F9B2):", ctx
+                return "🔍 *ఫిర్యాదు/సర్టిఫికెట్ స్థితి*\n\nమీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
             return "🔍 *Track Complaint/Certificate*\n\nEnter your Reference ID (e.g., CMP-A3F9B2):", ctx
         
         if ml in ("4", "schemes"):
@@ -295,6 +293,8 @@ def bot_reply(user_msg, ctx, media_info=None):
     # ── COMPLAINT FLOW ──
     if state == "c_name":
         if len(msg) < 2:
+            if lang == "te":
+                return "దయచేసి సరైన పేరు టైప్ చేయండి (కనీసం 2 అక్షరాలు):", ctx
             return "Please enter a valid name (at least 2 characters):", ctx
         ctx["c_name"] = msg.title()
         ctx["state"] = "c_phone"
@@ -304,6 +304,8 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "c_phone":
         if not (msg.isdigit() and len(msg) >= 10):
+            if lang == "te":
+                return "దయచేసి సరైన 10-అంకెల మొబైల్ నంబర్ టైప్ చేయండి:", ctx
             return "Please enter a valid 10-digit mobile number:", ctx
         ctx["c_phone"] = msg
         ctx["state"] = "c_cat"
@@ -314,6 +316,8 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "c_cat":
         if msg not in COMPLAINT_CATS:
+            if lang == "te":
+                return "దయచేసి 1-7 మధ్య సంఖ్య ఎంచుకోండి:", ctx
             return "Please choose 1-7:", ctx
         ctx["c_cat"] = COMPLAINT_CATS[msg]
         ctx["state"] = "c_desc"
@@ -323,6 +327,8 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "c_desc":
         if len(msg) < 5:
+            if lang == "te":
+                return "దయచేసి మరింత వివరంగా టైప్ చేయండి (కనీసం 5 అక్షరాలు):", ctx
             return "Please provide more details (at least 5 characters):", ctx
         ctx["c_desc"] = msg
         ctx["state"] = "waiting_for_location"
@@ -331,10 +337,13 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "📍 *Please share your location*\n\nTap 📎 → Location OR type your village name:", ctx
     
     if state == "waiting_for_location":
-        # Check if user typed a village name
+        # Check if user typed a village name or sent location
         detected_village = detect_village_from_text(msg)
         if detected_village:
             ctx["village"] = detected_village
+        elif ctx.get("location_lat"):
+            # Location already set via separate handler
+            pass
         else:
             ctx["location_text"] = msg
         
@@ -346,7 +355,10 @@ def bot_reply(user_msg, ctx, media_info=None):
     if state == "c_pri":
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
+            if lang == "te":
+                return "దయచేసి 1, 2, లేదా 3 టైప్ చేయండి:", ctx
             return "Please reply 1, 2, or 3:", ctx
+        
         ref = new_id("CMP-")
         rec = {
             "id": ref, "name": ctx["c_name"], "phone": ctx["c_phone"],
@@ -366,12 +378,15 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         reply += "\n\nSave this ID for tracking. Resolution within 3-7 days.\n\nType *menu* for main menu"
         
-        ctx = {"state": "idle", "lang": lang}
-        return reply, ctx
+        # Reset session
+        new_ctx = {"state": "idle", "lang": lang}
+        return reply, new_ctx
     
     # ── CERTIFICATE FLOW ──
     if state == "cert_type":
         if msg not in CERT_TYPES:
+            if lang == "te":
+                return "దయచేసి 1-6 మధ్య సంఖ్య ఎంచుకోండి:", ctx
             return "Please choose 1-6:", ctx
         ctx["cert_type"] = CERT_TYPES[msg]
         ctx["state"] = "cert_name"
@@ -380,6 +395,10 @@ def bot_reply(user_msg, ctx, media_info=None):
         return f"📄 *Certificate:* {ctx['cert_type']}\n\nApplicant full name:", ctx
     
     if state == "cert_name":
+        if len(msg) < 2:
+            if lang == "te":
+                return "దయచేసి సరైన పేరు టైప్ చేయండి:", ctx
+            return "Please enter a valid name:", ctx
         ctx["cert_name"] = msg.title()
         ctx["state"] = "cert_father"
         if lang == "te":
@@ -395,6 +414,8 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "cert_phone":
         if not (msg.isdigit() and len(msg) >= 10):
+            if lang == "te":
+                return "దయచేసి సరైన 10-అంకెల మొబైల్ నంబర్ టైప్ చేయండి:", ctx
             return "Please enter a valid 10-digit number:", ctx
         ctx["cert_phone"] = msg
         ctx["state"] = "cert_purpose"
@@ -410,48 +431,44 @@ def bot_reply(user_msg, ctx, media_info=None):
             "purpose": msg, "filed_at": now_str()
         }
         insert_certificate(rec)
-        ctx = {"state": "idle", "lang": lang}
+        new_ctx = {"state": "idle", "lang": lang}
         if lang == "te":
-            return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n📅 తేదీ: {rec['filed_at']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
-        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n📅 Date: {rec['filed_at']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", ctx
+            return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n📅 తేదీ: {rec['filed_at']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", new_ctx
+        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n📅 Date: {rec['filed_at']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", new_ctx
     
     # ── TRACK STATUS ──
     if state == "track_id":
         ref = msg.upper().strip()
-        ctx["state"] = "idle"
         rec = get_record(ref)
         if not rec:
             if lang == "te":
-                return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
-            return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", ctx
+                return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
         
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
             if lang == "te":
-                return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
-            return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", ctx
+                return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
         
         if lang == "te":
-            return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec.get('type', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
-        return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec.get('type', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", ctx
+            return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec.get('type', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+        return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec.get('type', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
-    # Default fallback
-    ctx["state"] = "idle"
-    return get_menu(ctx), ctx
+    # Fallback
+    return get_menu(ctx), {"state": "idle", "lang": lang}
 
-# ── WhatsApp Webhook (Supports Text, Location, Voice) ────────
+# ── WhatsApp Webhook ────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
-    # GET request: Meta webhook verification
     if request.method == "GET":
         if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge", "")
         return "Invalid token", 403
     
-    # POST request: Incoming messages
     try:
         data = request.json
-        print(f" Webhook received: {data}")
+        print(f" Webhook received")
         
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
@@ -465,13 +482,11 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
         
-        # Get or create session
         if sender not in whatsapp_sessions:
             whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
         
         session_data = whatsapp_sessions[sender]
         
-        # Handle different message types
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
             print(f" Text from {sender}: {user_msg}")
@@ -486,7 +501,7 @@ def whatsapp_webhook():
             maps_link = f"https://maps.google.com/?q={lat},{lng}"
             detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
             
-            print(f" Location from {sender}: {lat}, {lng} -> Village: {detected_village}")
+            print(f" Location from {sender}: {detected_village}")
             
             session_data["location_lat"] = lat
             session_data["location_lng"] = lng
@@ -504,9 +519,7 @@ def whatsapp_webhook():
                     reply = f"📍 Location received!\n\nVillage: {detected_village}\n\n⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High"
                 send_whatsapp_message(sender, reply)
             else:
-                # Just acknowledge location
-                lang = session_data.get("lang", "en")
-                if lang == "te":
+                if session_data.get("lang", "en") == "te":
                     reply = f"📍 లొకేషన్ అందుకుంది!\n\nగ్రామం: {detected_village}\n\nమీ ఫిర్యాదును కొనసాగించండి"
                 else:
                     reply = f"📍 Location received!\n\nVillage: {detected_village}\n\nContinue with your complaint"
@@ -514,21 +527,16 @@ def whatsapp_webhook():
         
         elif msg_type == "voice":
             voice_id = msg["voice"]["id"]
-            # Get voice media URL (requires additional API call)
             voice_url = f"https://graph.facebook.com/v19.0/{voice_id}"
-            print(f" Voice from {sender}: {voice_id}")
+            print(f" Voice from {sender}")
             
             media_info = {"type": "voice", "url": voice_url}
             reply, session_data = bot_reply("", session_data, media_info)
             send_whatsapp_message(sender, reply)
         
-        elif msg_type == "image":
-            send_whatsapp_message(sender, "📸 Image received! Please share your location or describe the problem in text.")
-        
         else:
             send_whatsapp_message(sender, "Please send text, location, or voice message.")
         
-        # Save updated session
         whatsapp_sessions[sender] = session_data
         
     except Exception as e:
@@ -537,28 +545,9 @@ def whatsapp_webhook():
     return "OK", 200
 
 # ── Routes ────────────────────────────────────────────────────
-CHIPS = ["1 Complaint", "2 Certificate", "3 Track Status", "4 Schemes", "5 Works", "6 Announcements"]
-
-@app.route("/", methods=["GET", "POST"])
-def chat_view():
-    if "chat" not in session:
-        session["chat"] = [("bot", MENU_EN, fmt_time())]
-        session["ctx"] = {"state": "idle", "lang": "en"}
-        session.modified = True
-    chips = CHIPS if session["ctx"].get("state") == "idle" else []
-    if request.method == "POST":
-        um = request.form.get("message", "").strip()
-        if not um:
-            return redirect("/")
-        session["chat"].append(("user", um, fmt_time()))
-        reply, nc = bot_reply(um, dict(session["ctx"]))
-        session["ctx"] = nc
-        session["chat"].append(("bot", reply, fmt_time()))
-        session.modified = True
-        chips = CHIPS if session["ctx"].get("state") == "idle" else []
-    session["chat"] = session["chat"][-80:]
-    return render_template_string(CHAT_HTML, chat=session["chat"], chips=chips,
-        village=VILLAGE_NAME, sarpanch=SARPANCH_NAME)
+@app.route("/")
+def home():
+    return redirect("/sarpanch")
 
 @app.route("/sarpanch")
 def dashboard():
@@ -566,16 +555,32 @@ def dashboard():
     ce = all_certs()
     wo = all_works()
     an = all_announcements()
+    
+    # Separate active and resolved
+    active_complaints = [x for x in ac if x["status"] in ("pending", "in_review", "in_progress")]
+    resolved_complaints = [x for x in ac if x["status"] in ("resolved", "rejected")]
+    active_certs = [x for x in ce if x["status"] in ("pending", "processing")]
+    resolved_certs = [x for x in ce if x["status"] in ("ready", "rejected")]
+    
     counts = dict(
-        pc=sum(1 for x in ac if x["status"] in ("pending", "in_review", "in_progress")),
-        cert=sum(1 for x in ce if x["status"] in ("pending", "processing")),
-        res=sum(1 for x in ac + ce if x["status"] in ("resolved", "ready")),
+        pc=len(active_complaints),
+        cert=len(active_certs),
+        res=len(resolved_complaints) + len(resolved_certs),
         works=sum(1 for x in wo if x["status"] in ("pending", "in_progress")),
         hi=sum(1 for x in ac if x.get("priority") == "high" and x["status"] not in ("resolved", "rejected")),
     )
-    return render_template_string(DASH_HTML, complaints=ac, certs=ce, works=wo,
-        announcements=an, village=VILLAGE_NAME, sarpanch=SARPANCH_NAME,
-        mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"),
+    
+    return render_template_string(DASH_HTML, 
+        active_complaints=active_complaints,
+        resolved_complaints=resolved_complaints,
+        active_certs=active_certs,
+        resolved_certs=resolved_certs,
+        works=wo,
+        announcements=an,
+        village=VILLAGE_NAME,
+        sarpanch=SARPANCH_NAME,
+        mandal=MANDAL,
+        now=datetime.now().strftime("%d %b %Y, %H:%M"),
         c=counts)
 
 @app.route("/complaint/<cid>")
@@ -588,6 +593,32 @@ def view_complaint(cid):
     if not complaint:
         return "Complaint not found", 404
     return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint)
+
+@app.route("/update_status", methods=["POST"])
+def update_status_route():
+    ticket_id = request.form.get("ticket_id")
+    new_status = request.form.get("status")
+    notes = request.form.get("notes", "")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
+    conn.commit()
+    conn.close()
+    return redirect(f"/complaint/{ticket_id}")
+
+@app.route("/send_reply", methods=["POST"])
+def send_reply_route():
+    ticket_id = request.form.get("ticket_id")
+    reply_message = request.form.get("reply_message")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT phone FROM complaints WHERE id = ?", (ticket_id,))
+    result = cur.fetchone()
+    conn.close()
+    if result:
+        citizen_number = result["phone"] if isinstance(result, dict) else result[0]
+        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {VILLAGE_NAME}")
+    return redirect(f"/complaint/{ticket_id}")
 
 @app.route("/caction/<rid>/<action>")
 def c_action(rid, action):
@@ -619,61 +650,7 @@ def announce():
         insert_announcement(t, b)
     return redirect("/sarpanch")
 
-@app.route("/sessions")
-def sessions():
-    rows = "".join(f"<tr><td>{p}</td><td>{c.get('state','?')}</td><td>{c.get('lang','en')}</td></tr>" for p, c in whatsapp_sessions.items())
-    return f"<html><body style='font-family:monospace;padding:20px'><h3>Sessions ({len(whatsapp_sessions)})</h3><table border=1 cellpadding=8><tr><th>Phone</th><th>State</th><th>Lang</th></tr>{rows or '<tr><td colspan=3>None</td></tr>'}</table><br><a href='/sarpanch'>Dashboard</a></body></html>"
-
-# ── HTML Templates ────────────────────────────────────────────
-CHAT_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ village }}</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:#d9dbdd;min-height:100vh;display:flex;align-items:center;justify-content:center}
-.phone{width:390px;height:760px;background:#fff;border-radius:24px;box-shadow:0 24px 64px rgba(0,0,0,.25);display:flex;flex-direction:column;overflow:hidden}
-.header{background:#4a7c59;padding:12px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}
-.header-text h2{color:#fff;font-size:14px;font-weight:600}
-.header-text p{color:#c5dfc9;font-size:11px}
-.chat{flex:1;overflow-y:auto;padding:12px 10px;background:#efeae2;display:flex;flex-direction:column;gap:6px}
-.bw{display:flex;flex-direction:column}
-.bw.user{align-items:flex-end}.bw.bot{align-items:flex-start}
-.bubble{max-width:78%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
-.bubble.user{background:#dcf8c6;border-bottom-right-radius:2px}
-.bubble.bot{background:#fff;border-bottom-left-radius:2px;box-shadow:0 1px 2px rgba(0,0,0,.1)}
-.tl{font-size:10px;color:#999;margin-top:2px;padding:0 4px}
-.dd{text-align:center;margin:8px 0}
-.dd span{background:#d4e8d7;color:#555;font-size:11px;padding:3px 10px;border-radius:8px}
-.chips{display:flex;flex-wrap:wrap;gap:6px;padding:6px 10px 0;background:#f8f9fa}
-.chip{background:#eaf3ec;border:1px solid #4a7c59;color:#2d5a3d;font-size:12px;padding:4px 10px;border-radius:14px;cursor:pointer;font-family:inherit}
-.ir{display:flex;align-items:center;gap:8px;padding:10px;background:#f0f0f0;border-top:1px solid #ddd;flex-shrink:0}
-.ir input{flex:1;border:none;background:#fff;border-radius:22px;padding:10px 16px;font-size:14px;font-family:inherit;outline:none}
-.sb{width:44px;height:44px;background:#4a7c59;border:none;border-radius:50%;cursor:pointer;font-size:18px;color:#fff}
-.fab{position:fixed;bottom:24px;right:24px;background:#4a7c59;color:#fff;text-decoration:none;padding:10px 16px;border-radius:24px;font-size:13px;font-weight:600;box-shadow:0 4px 14px rgba(0,0,0,.25)}
-</style></head><body>
-<div class="phone">
-  <div class="header">
-    <div class="header-text"><h2>{{ sarpanch }}</h2><p>{{ village }} Gram Panchayat</p></div>
-  </div>
-  <div class="chat" id="cb">
-    <div class="dd"><span>Today</span></div>
-    {% for r,t,ts in chat %}
-    <div class="bw {{ r }}"><div class="bubble {{ r }}">{{ t|safe }}</div><div class="tl">{{ ts }}</div></div>
-    {% endfor %}
-  </div>
-  {% if chips %}<form method="post" class="chips">
-    {% for c in chips %}<button class="chip" type="submit" name="message" value="{{ c }}">{{ c }}</button>{% endfor %}
-  </form>{% endif %}
-  <form method="post" class="ir">
-    <input type="text" name="message" placeholder="Type your message..." autocomplete="off" autofocus>
-    <button type="submit" class="sb">&#10148;</button>
-  </form>
-</div>
-<a href="/sarpanch" class="fab">Dashboard</a>
-<script>document.getElementById('cb').scrollTop=99999;</script>
-</body></html>"""
-
+# ── HTML Templates (Original Working Dashboard Style) ────────
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="20">
@@ -713,7 +690,6 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .af input,.wf input{flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;min-width:140px}
 .af button,.wf button{background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600}
 .map-link{color:#1a73e8;text-decoration:none;font-weight:500}
-.audio-player{width:100%;margin-top:5px}
 </style></head><body>
 <div class="tb">
   <div class="tl">
@@ -728,12 +704,16 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sc c4"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
   <div class="sc c5"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
 </div>
+
+<!-- Active Complaints Section -->
 <div class="sec">
-  <div class="sh">Complaints Queue <span>Pending + In Review + In Progress</span></div>
-  {% set ac=complaints|selectattr("status","in",["pending","in_review","in_progress"])|list %}
-  {% if ac %}<tr><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  {% for x in ac %}<tr>
-    <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
+  <div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
+  {% if active_complaints %}
+  <table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% for x in active_complaints %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
     <td>{{ x.category }}</td>
     <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td>
@@ -747,15 +727,20 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
       <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
     </div></td>
-  </tr>{% endfor %}</tbody></table>
+  </tr>
+  {% endfor %}</tbody></table>
   {% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
+
+<!-- Active Certificate Requests -->
 <div class="sec">
-  <div class="sh">Certificate Requests <span>Pending + Processing</span></div>
-  {% set ac=certs|selectattr("status","in",["pending","processing"])|list %}
-  {% if ac %}<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  {% for x in ac %}<tr>
-    <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
+  <div class="sh">📋 Active Certificate Requests <span>Pending + Processing</span></div>
+  {% if active_certs %}
+  <table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% for x in active_certs %}
+  <tr>
+    <td>{{ loop.index }}</td>
+    <td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
     <td>{{ x.type }}</td>
     <td>{{ x.purpose }}</td>
@@ -766,13 +751,18 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
       <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>{% endfor %}</tbody></table>
-  {% else %}<div class="empty">No pending requests.</div>{% endif %}
+  </tr>
+  {% endfor %}</tbody></table>
+  {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
 </div>
+
+<!-- Development Works -->
 <div class="sec">
-  <div class="sh">Development Works</div>
-  {% if works %}<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
-  {% for w in works %}<tr>
+  <div class="sh">🛠️ Development Works</div>
+  {% if works %}
+  <table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+  {% for w in works %}
+  <tr>
     <td><strong>{{ w.id }}</strong></td>
     <td>{{ w.title }}</td>
     <td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
@@ -782,29 +772,65 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
       <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>{% endfor %}</tbody></tr>
+  </tr>
+  {% endfor %}</tbody></table>
   {% else %}<div class="empty">No works added.</div>{% endif %}
   <form method="post" action="/addwork" class="wf">
     <input type="text" name="title" placeholder="Add new work" required>
-    <button type="submit">+ Add</button>
+    <button type="submit">+ Add Work</button>
   </form>
 </div>
+
+<!-- Announcements -->
 <div class="sec">
-  <div class="sh">Announcements</div>
-  {% if announcements %}<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
-  {% for a in announcements %}<tr>
+  <div class="sh">📢 Announcements</div>
+  {% if announcements %}
+  <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+  {% for a in announcements %}
+  <tr>
     <td><strong>{{ a.title }}</strong></td>
     <td>{{ a.body }}</td>
     <td style="font-size:11px;color:#888">{{ a.date }}</td>
-  </tr>{% endfor %}</tbody></table>
+  </tr>
+  {% endfor %}</tbody></table>
   {% else %}<div class="empty">No announcements.</div>{% endif %}
   <form method="post" action="/announce" class="af">
     <input type="text" name="title" placeholder="Title" required>
     <input type="text" name="body" placeholder="Message..." required>
-    <button type="submit">Post</button>
+    <button type="submit">Post Announcement</button>
   </form>
 </div>
-</body></html>"""
+
+<!-- Resolved/Closed Items -->
+<div class="sec">
+  <div class="sh">✅ Resolved / Closed Items</div>
+  {% if resolved_complaints or resolved_certs %}
+  <table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>
+  {% for x in resolved_complaints %}
+  <tr>
+    <td>{{ x.id }}</td>
+    <td>Complaint</td>
+    <td>{{ x.name }}</td>
+    <td>{{ x.category }}</td>
+    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+    <td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
+  </tr>
+  {% endfor %}
+  {% for x in resolved_certs %}
+  <tr>
+    <td>{{ x.id }}</td>
+    <td>Certificate</td>
+    <td>{{ x.name }}</td>
+    <td>{{ x.type }}</td>
+    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+    <td>-</td>
+  </tr>
+  {% endfor %}
+  </tbody></table>
+  {% else %}<div class="empty">No resolved items.</div>{% endif %}
+</div>
+</body></html>
+"""
 
 COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
 <html>
@@ -812,7 +838,7 @@ COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
 <style>
 body{font-family: Arial; margin:0; background:#f5f5f5}
 .header{background:#4a7c59; color:white; padding:15px 20px}
-.container{max-width:800px; margin:30px auto; background:white; padding:25px; border-radius:10px}
+.container{max-width:800px; margin:30px auto; background:white; padding:25px; border-radius:10px; box-shadow:0 2px 10px rgba(0,0,0,0.1)}
 .field{margin-bottom:15px}
 .label{font-weight:bold; width:150px; display:inline-block}
 button{background:#1a73e8; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer}
@@ -820,7 +846,6 @@ button{background:#1a73e8; color:white; border:none; padding:10px 20px; border-r
 .back-btn{background:#666; color:white; padding:8px 15px; text-decoration:none; display:inline-block; margin-bottom:20px; border-radius:5px}
 hr{margin:20px 0}
 .map-link{color:#1a73e8; text-decoration:none; font-weight:bold}
-.audio-player{width:100%; margin-top:5px}
 </style>
 </head>
 <body>
@@ -837,23 +862,14 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Filed:</span> {{ complaint.filed_at }}</div>
 {% if complaint.maps_link %}
 <div class="field">
-    <span class="label">📍 Map Location:</span>
-    <a href="{{ complaint.maps_link }}" target="_blank" class="map-link">🗺️ Click to view on Google Maps</a>
+    <span class="label">🗺️ Map Location:</span>
+    <a href="{{ complaint.maps_link }}" target="_blank" class="map-link">Click to view on Google Maps</a>
     <br><small style="color:#666">Coordinates: {{ complaint.location_lat }}, {{ complaint.location_lng }}</small>
-</div>
-{% endif %}
-{% if complaint.media_type == 'voice' and complaint.media_url %}
-<div class="field">
-    <span class="label">🎤 Voice Complaint:</span>
-    <audio controls class="audio-player">
-        <source src="{{ complaint.media_url }}" type="audio/ogg">
-        Your browser does not support audio element.
-    </audio>
 </div>
 {% endif %}
 <div class="field">
     <span class="label">Complaint:</span><br>
-    <div style="background:#f8f9fa; padding:15px; border-radius:5px">{{ complaint.description }}</div>
+    <div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.description }}</div>
 </div>
 <hr>
 <h3>Update Status</h3>
@@ -866,50 +882,24 @@ hr{margin:20px 0}
     <option value="resolved" {% if complaint.status=='resolved' %}selected{% endif %}>Resolved</option>
     <option value="rejected" {% if complaint.status=='rejected' %}selected{% endif %}>Rejected</option>
 </select>
-<textarea name="notes" placeholder="Add notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
+<textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
 <button type="submit">Update Status</button>
 </form>
 <hr>
 <h3>Send Reply to Citizen</h3>
 <form method="POST" action="/send_reply">
 <input type="hidden" name="ticket_id" value="{{ complaint.id }}">
-<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive on WhatsApp"></textarea>
+<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
 <button type="submit">Send Reply</button>
 </form>
 </div>
-</body>
-</html>"""
-
-@app.route("/update_status", methods=["POST"])
-def update_status_route():
-    ticket_id = request.form.get("ticket_id")
-    new_status = request.form.get("status")
-    notes = request.form.get("notes", "")
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
-    conn.commit()
-    conn.close()
-    return redirect(f"/complaint/{ticket_id}")
-
-@app.route("/send_reply", methods=["POST"])
-def send_reply_route():
-    ticket_id = request.form.get("ticket_id")
-    reply_message = request.form.get("reply_message")
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT phone FROM complaints WHERE id = ?", (ticket_id,))
-    result = cur.fetchone()
-    conn.close()
-    if result:
-        citizen_number = result["phone"] if isinstance(result, dict) else result[0]
-        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {VILLAGE_NAME}")
-    return redirect(f"/complaint/{ticket_id}")
+</body></html>
+"""
 
 # ── Run ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5006))
     print(f" Starting on port {port}")
-    print(f" WhatsApp Business Number: +91 {PHONE_NUMBER_ID[-10:] if len(PHONE_NUMBER_ID) > 10 else '8008042801'}")
+    print(f" WhatsApp Business Number: +91 80080 42801")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
