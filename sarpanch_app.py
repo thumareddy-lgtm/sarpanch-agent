@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD - NO VILLAGE FILTER, SHOWS ALL COMPLAINTS ──────
+# ── DASHBOARD - WITH PROBLEM COLUMN ──────────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -722,10 +722,13 @@ def dashboard():
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
+                problem_text = x.get('description', '')
+                if not problem_text:
+                    problem_text = 'No description'
                 
                 c = {
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
-                    'category': x.get('category', ''), 'description': x.get('description', ''),
+                    'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': x.get('priority', 'medium'),
                     'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', '')
                 }
@@ -736,10 +739,13 @@ def dashboard():
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
+                problem_text = x[4] if len(x) > 4 else ''
+                if not problem_text:
+                    problem_text = 'No description'
                 
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
-                    'description': x[4], 'location': display_location, 'priority': x[6],
+                    'description': problem_text, 'location': display_location, 'priority': x[6],
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
             
@@ -998,7 +1004,7 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:120px;height:120px;border-radius:50%;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59}
+.photo-preview{width:320px;height:320px;border-radius:50%;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:8px;border:1px solid #ddd;border-radius:5px}
@@ -1054,7 +1060,7 @@ body{font-family:Arial;margin:0;background:#f0f2f5}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}
 th{background:#f4f5f7}
-.photo{width:40px;height:40px;border-radius:50%;object-fit:cover}
+.photo{width:80px;height:80px;border-radius:50%;object-fit:cover}
 .btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
 .btn-back{background:#666}
 </style>
@@ -1148,7 +1154,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
 .tl{display:flex;align-items:center;gap:14px}
-.avatar{width:160px;height:160px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
+.avatar{width:320px;height:320px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
 .tb h1{font-size:15px;font-weight:700}
 .ts{font-size:11px;opacity:.75}
 .stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
@@ -1208,7 +1214,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
 {% if active_complaints %}
 <table>
-<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location/Village</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<thead>
+<tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Problem/Complaint</th><th>Location/Village</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr>
+</thead>
 <tbody>
 {% for x in active_complaints %}
 <tr>
@@ -1216,6 +1224,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <td><strong>{{ x.id }}</strong></td>
 <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
 <td>{{ x.category }}</td>
+<td><small>{{ x.description[:60] }}{% if x.description|length > 60 %}...{% endif %}</small></td>
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
@@ -1239,7 +1248,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">📋 Active Certificate Requests <span>Pending + Processing</span></div>
 {% if active_certs %}
 <table>
-<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<thead>
+<tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr>
+</thead>
 <tbody>
 {% for x in active_certs %}
 <tr>
@@ -1267,7 +1278,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
 <table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<thead>
+<tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr>
+</thead>
 <tbody>
 {% for w in works %}
 <tr>
@@ -1296,7 +1309,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
 <table>
-<thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead>
+<thead>
+<tr><th>Title</th><th>Message</th><th>Date</th></tr>
+</thead>
 <tbody>
 {% for a in announcements %}
 <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
@@ -1316,7 +1331,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints or resolved_certs %}
 <table>
-<thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead>
+<thead>
+<tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr>
+</thead>
 <tbody>
 {% for x in resolved_complaints %}
 <tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
@@ -1355,6 +1372,7 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
 <div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
 <div class="field"><span class="label">Category:</span> {{ complaint.get('category', 'General') }}</div>
+<div class="field"><span class="label">Problem/Complaint:</span><br><div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.get('description', 'No description') }}</div></div>
 <div class="field"><span class="label">Location/Village:</span> {{ complaint.get('location', 'Not provided') }}</div>
 <div class="field"><span class="label">Priority:</span> {{ complaint.get('priority', 'medium')|upper }}</div>
 <div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
@@ -1362,7 +1380,6 @@ hr{margin:20px 0}
 {% if complaint.get('maps_link') %}
 <div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a><br><small>Coordinates: {{ complaint.get('location_lat', 'N/A') }}, {{ complaint.get('location_lng', 'N/A') }}</small></div>
 {% endif %}
-<div class="field"><span class="label">Complaint:</span><br><div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.get('description', 'No description') }}</div></div>
 <hr>
 <h3>Update Status</h3>
 <form method="POST" action="/update_status">
