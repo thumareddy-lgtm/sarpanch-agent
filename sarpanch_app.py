@@ -1,7 +1,6 @@
-import os, uuid, sqlite3
+import os, uuid, sqlite3, requests, re
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session
-import requests
 
 # ── Config ───────────────────────────────────────────────────
 VILLAGE_NAME  = os.environ.get("VILLAGE_NAME",  "Kolukonda Village")
@@ -39,7 +38,9 @@ def init_db():
     u = "updated" if db_type == "pg" else "updated_at"
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
-    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
+    
+    # Main tables
+    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
@@ -55,8 +56,10 @@ def insert_complaint(c):
     conn, db_type = get_db(); cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
-        (c["id"],c["name"],c["phone"],c["category"],c["desc"],c["location"],c["priority"],"pending",c["filed_at"],c["filed_at"],""))
+    cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,location_lat,location_lng,location_address,maps_link,media_type,media_url) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
+        (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
+         c.get("location_lat"),c.get("location_lng"),c.get("location_address",""),c.get("maps_link",""),
+         c.get("media_type",""),c.get("media_url","")))
     conn.commit(); conn.close()
 
 def insert_certificate(c):
@@ -126,7 +129,31 @@ def insert_announcement(title, body):
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title, body, now_str()))
     conn.commit(); conn.close()
 
-# ── WhatsApp API Function (Meta, not Twilio) ─────────────────
+# ── Helper Functions ─────────────────────────────────────────
+def detect_village_from_coords(lat, lng):
+    """Reverse geocoding to get village name from coordinates"""
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
+        response = requests.get(url, headers={"User-Agent": "SarpanchBot/1.0"}, timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            address = data.get("address", {})
+            village = address.get("village") or address.get("town") or address.get("city") or address.get("hamlet")
+            return village
+    except Exception as e:
+        print(f"Geocoding error: {e}")
+    return None
+
+def detect_village_from_text(text):
+    """Extract village name from text message"""
+    villages = ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad']
+    text_lower = text.lower()
+    for village in villages:
+        if village in text_lower:
+            return village.title()
+    return None
+
+# ── WhatsApp API Function ────────────────────────────────────
 def send_whatsapp_message(to_number, message):
     """Send message using Meta WhatsApp Cloud API"""
     if not META_TOKEN:
@@ -150,191 +177,278 @@ def send_whatsapp_message(to_number, message):
             print(f" Message sent to {to_number}")
             return True
         else:
-            print(f" Failed to send: {response.status_code} - {response.text}")
+            print(f" Failed: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        print(f" Error sending message: {e}")
+        print(f" Error: {e}")
         return False
 
-# ── Bot Logic ────────────────────────────────────────────────
+# ── Bot Logic with Location & Voice Support ─────────────────
 MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
-    "1 Register Complaint\n2 Request Certificate\n3 Track Status\n"
-    "4 Government Schemes\n5 Development Works\n6 Announcements\n7 Office Info\n\n"
-    "Telugu lo kavali ante *telugu* ani pampandi.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+    "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
+    "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
+    "📍 You can share your location or 🎤 send voice message\n"
+    "తెలుగు కావాలంటే *telugu* టైప్ చేయండి.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
 
-MENU_TE = ("Namaskaram! *{v}* Grama Panchayatiki swaagatam\nSarpanch: *{s}*\n\n"
-    "1 Firyaadu Namodhu\n2 Certificate Abhyartana\n3 Sthiti Tanikhee\n"
-    "4 Prabhutvam Pathakaalu\n5 Abhivruddhi Panulu\n6 Prakatanalu\n7 Karyalayam\n\n"
+MENU_TE = ("నమస్కారం! *{v}* గ్రామ పంచాయతీకి స్వాగతం\nసర్పంచ్: *{s}*\n\n"
+    "1️⃣ ఫిర్యాదు నమోదు చేయండి\n2️⃣ సర్టిఫికెట్ అభ్యర్థించండి\n3️⃣ ఫిర్యాదు స్థితి తెలుసుకోండి\n"
+    "4️⃣ ప్రభుత్వ పథకాలు\n5️⃣ అభివృద్ధి పనులు\n6️⃣ ప్రకటనలు\n7️⃣ కార్యాలయ సమాచారం\n\n"
+    "📍 మీ లొకేషన్ షేర్ చేయండి లేదా 🎤 వాయిస్ మెసేజ్ పంపండి\n"
     "For English type *english*").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
 
 COMPLAINT_CATS = {"1":"Road / Pothole","2":"Water Supply","3":"Electricity","4":"Drainage","5":"Ration Shop","6":"Land Dispute","7":"Other"}
 CERT_TYPES = {"1":"Income Certificate","2":"Caste Certificate","3":"Residence Certificate","4":"Birth Certificate","5":"Death Certificate","6":"Agriculture Land Certificate"}
-SCHEMES = [("Rythu Bandhu","Rs 5000/acre/season for farmers"),("PM Awas Yojana","Free house for BPL families"),
-    ("Aarogyasri","Free medical up to Rs 5L/year"),("Kalyana Lakshmi","Rs 1 lakh for girl marriage"),
-    ("PM Kisan","Rs 6000/year for farmers"),("NREGA","100 days employment"),("Bhadratha","Free LPG for BPL")]
+SCHEMES = [("Rythu Bandhu","₹5000/acre/season for farmers"),("PM Awas Yojana","Free house for BPL families"),
+    ("Aarogyasri","Free medical up to ₹5L/year"),("Kalyana Lakshmi","₹1 lakh for girl marriage"),
+    ("PM Kisan","₹6000/year for farmers"),("NREGA","100 days employment"),("Bhadratha","Free LPG for BPL")]
 STATUS_MAP = {"pending":"Pending","in_review":"In Review","in_progress":"In Progress","resolved":"Resolved","rejected":"Rejected","ready":"Ready to Collect","processing":"Processing"}
 PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
 def get_menu(ctx): return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-def bot_reply(user_msg, ctx):
-    msg=user_msg.strip(); ml=msg.lower()
-    state=ctx.get("state","idle"); lang=ctx.get("lang","en")
+def bot_reply(user_msg, ctx, media_info=None):
+    msg = user_msg.strip() if user_msg else ""
+    ml = msg.lower()
+    state = ctx.get("state", "idle")
+    lang = ctx.get("lang", "en")
     
-    if ml=="telugu": ctx.update({"lang":"te","state":"idle"}); return MENU_TE,ctx
-    if ml=="english": ctx.update({"lang":"en","state":"idle"}); return MENU_EN,ctx
-    if ml in ("menu","home","back","hi","hello","start","help"): 
-        ctx={"state":"idle","lang":lang}; return get_menu(ctx),ctx
-
-    if state=="idle":
-        if ml in ("1","complaint"): ctx["state"]="c_name"; return "Register Complaint\n\nEnter your full name:",ctx
-        if ml in ("2","certificate"):
-            cats="\n".join(f"{k}. {v}" for k,v in CERT_TYPES.items()); ctx["state"]="cert_type"
-            return f"Certificate Request\n\nSelect type:\n{cats}",ctx
-        if ml in ("3","track","status"): ctx["state"]="track_id"; return "Enter your Reference ID:\n(e.g. CMP-A3F9B2)",ctx
-        if ml in ("4","schemes"):
-            lines=[f"{n}: {d}" for n,d in SCHEMES]; ctx["state"]="idle"
-            return "Government Schemes\n\n"+"\n\n".join(lines)+"\n\nType menu.",ctx
-        if ml in ("5","works"):
-            rows=active_works(); ctx["state"]="idle"
-            if not rows: return "No active works.\n\nType menu.",ctx
-            lines=[f"{w['title']} - {STATUS_MAP.get(w['status'],w['status'])}" for w in rows[:5]]
-            return "Development Works:\n\n"+"\n".join(lines)+"\n\nType menu.",ctx
-        if ml in ("6","announcements"):
-            rows=all_announcements()[:3]; ctx["state"]="idle"
-            if not rows: return "No announcements.\n\nType menu.",ctx
-            return "Announcements:\n\n"+"\n\n".join(f"{a['title']}: {a['body']}" for a in rows)+"\n\nType menu.",ctx
-        if ml in ("7","info","office"):
-            ctx["state"]="idle"
-            return f"{VILLAGE_NAME} Gram Panchayat\nSarpanch: {SARPANCH_NAME}\n{MANDAL}\nOffice: Mon-Sat 10AM-5PM\nHelpline: 1800-425-0066\nCM: 1100\nEmergency: 112",ctx
-        return "Please choose from menu:\n\n"+get_menu(ctx),ctx
-
-    # COMPLAINT
-    if state=="c_name":
-        if len(msg)<2: return "Enter valid name.",ctx
-        ctx["c_name"]=msg.title(); ctx["state"]="c_phone"; return f"Hello {ctx['c_name']}!\n\nMobile number:",ctx
-    if state=="c_phone":
-        if not(msg.isdigit() and len(msg)>=10): return "Enter 10-digit number.",ctx
-        ctx["c_phone"]=msg; ctx["state"]="c_cat"
-        return "Select category:\n\n"+"\n".join(f"{k}. {v}" for k,v in COMPLAINT_CATS.items()),ctx
-    if state=="c_cat":
-        if msg not in COMPLAINT_CATS: return "Choose 1-7.",ctx
-        ctx["c_cat"]=COMPLAINT_CATS[msg]; ctx["state"]="c_desc"; return f"Category: {ctx['c_cat']}\n\nDescribe the problem:",ctx
-    if state=="c_desc":
-        if len(msg)<5: return "Describe in more words.",ctx
-        ctx["c_desc"]=msg; ctx["state"]="c_loc"; return "Enter exact location / street name:",ctx
-    if state=="c_loc":
-        ctx["c_loc"]=msg; ctx["state"]="c_pri"; return "How urgent?\n\n1. Low\n2. Medium\n3. High",ctx
-    if state=="c_pri":
-        pmap={"1":"low","2":"medium","3":"high"}
-        if msg not in pmap: return "Reply 1, 2, or 3.",ctx
-        ref=new_id("CMP-")
-        rec={"id":ref,"name":ctx["c_name"],"phone":ctx["c_phone"],"category":ctx["c_cat"],
-             "desc":ctx["c_desc"],"location":ctx["c_loc"],"priority":pmap[msg],"filed_at":now_str()}
+    # Language switching
+    if ml == "telugu":
+        ctx.update({"lang": "te", "state": "idle"})
+        return MENU_TE, ctx
+    if ml == "english":
+        ctx.update({"lang": "en", "state": "idle"})
+        return MENU_EN, ctx
+    
+    # Menu navigation
+    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
+        ctx = {"state": "idle", "lang": lang}
+        return get_menu(ctx), ctx
+    
+    # Handle media (voice) if present
+    if media_info and media_info.get("type") == "voice":
+        ctx["media_type"] = "voice"
+        ctx["media_url"] = media_info.get("url", "")
+        ctx["state"] = "waiting_for_location"
+        return "🎤 *Voice message received!*\n\n📍 Please share your location (tap 📎 → Location) or type your village name:", ctx
+    
+    # Main menu options
+    if state == "idle":
+        if ml in ("1", "complaint"):
+            ctx["state"] = "c_name"
+            if lang == "te":
+                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
+            return "📝 *Register Complaint*\n\nEnter your full name:", ctx
+        
+        if ml in ("2", "certificate"):
+            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
+            ctx["state"] = "cert_type"
+            if lang == "te":
+                return f"📋 *సర్టిఫికెట్ అభ్యర్థన*\n\nరకం ఎంచుకోండి:\n{cats}", ctx
+            return f"📋 *Certificate Request*\n\nSelect type:\n{cats}", ctx
+        
+        if ml in ("3", "track", "status"):
+            ctx["state"] = "track_id"
+            if lang == "te":
+                return "🔍 *ఫిర్యాదు/సర్టిఫికెట్ స్థితి*\n\nమీ రిఫరెన్స్ ID టైప్ చేయండి (ఉదా: CMP-A3F9B2):", ctx
+            return "🔍 *Track Complaint/Certificate*\n\nEnter your Reference ID (e.g., CMP-A3F9B2):", ctx
+        
+        if ml in ("4", "schemes"):
+            lines = [f"{n}: {d}" for n, d in SCHEMES]
+            ctx["state"] = "idle"
+            if lang == "te":
+                return "📋 *ప్రభుత్వ పథకాలు*\n\n" + "\n\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+            return "📋 *Government Schemes*\n\n" + "\n\n".join(lines) + "\n\nType *menu* for main menu", ctx
+        
+        if ml in ("5", "works"):
+            rows = active_works()
+            ctx["state"] = "idle"
+            if not rows:
+                if lang == "te":
+                    return "🛠️ *ప్రస్తుతం చురుకుగా పనులు లేవు*\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+                return "🛠️ *No active development works*\n\nType *menu* for main menu", ctx
+            lines = [f"• {w['title']} - {STATUS_MAP.get(w['status'], w['status'])}" for w in rows[:5]]
+            if lang == "te":
+                return "🛠️ *అభివృద్ధి పనులు*\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+            return "🛠️ *Development Works*\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", ctx
+        
+        if ml in ("6", "announcements"):
+            rows = all_announcements()[:3]
+            ctx["state"] = "idle"
+            if not rows:
+                if lang == "te":
+                    return "📢 *ప్రకటనలు లేవు*\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+                return "📢 *No announcements*\n\nType *menu* for main menu", ctx
+            if lang == "te":
+                return "📢 *ప్రకటనలు*\n\n" + "\n\n".join(f"• {a['title']}: {a['body']}" for a in rows) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+            return "📢 *Announcements*\n\n" + "\n\n".join(f"• {a['title']}: {a['body']}" for a in rows) + "\n\nType *menu* for main menu", ctx
+        
+        if ml in ("7", "info", "office"):
+            ctx["state"] = "idle"
+            if lang == "te":
+                return f"🏛️ *{VILLAGE_NAME} గ్రామ పంచాయతీ*\n\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nజిల్లా: {DISTRICT}\n\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM\nహెల్ప్లైన్: 1800-425-0066\nఅత్యవసరం: 112", ctx
+            return f"🏛️ *{VILLAGE_NAME} Gram Panchayat*\n\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nDistrict: {DISTRICT}\n\nOffice Hours: Mon-Sat 10AM-5PM\nHelpline: 1800-425-0066\nEmergency: 112", ctx
+        
+        # Default - show menu
+        return get_menu(ctx), ctx
+    
+    # ── COMPLAINT FLOW ──
+    if state == "c_name":
+        if len(msg) < 2:
+            return "Please enter a valid name (at least 2 characters):", ctx
+        ctx["c_name"] = msg.title()
+        ctx["state"] = "c_phone"
+        if lang == "te":
+            return f"నమస్కారం {ctx['c_name']}!\n\nమొబైల్ నంబర్ (10 అంకెలు):", ctx
+        return f"Hello {ctx['c_name']}!\n\nMobile number (10 digits):", ctx
+    
+    if state == "c_phone":
+        if not (msg.isdigit() and len(msg) >= 10):
+            return "Please enter a valid 10-digit mobile number:", ctx
+        ctx["c_phone"] = msg
+        ctx["state"] = "c_cat"
+        cats = "\n".join(f"{k}. {v}" for k, v in COMPLAINT_CATS.items())
+        if lang == "te":
+            return f"📂 *వర్గం ఎంచుకోండి*\n\n{cats}", ctx
+        return f"📂 *Select complaint category*\n\n{cats}", ctx
+    
+    if state == "c_cat":
+        if msg not in COMPLAINT_CATS:
+            return "Please choose 1-7:", ctx
+        ctx["c_cat"] = COMPLAINT_CATS[msg]
+        ctx["state"] = "c_desc"
+        if lang == "te":
+            return f"📝 *వర్గం:* {ctx['c_cat']}\n\nసమస్య వివరించండి:", ctx
+        return f"📝 *Category:* {ctx['c_cat']}\n\nDescribe the problem:", ctx
+    
+    if state == "c_desc":
+        if len(msg) < 5:
+            return "Please provide more details (at least 5 characters):", ctx
+        ctx["c_desc"] = msg
+        ctx["state"] = "waiting_for_location"
+        if lang == "te":
+            return "📍 *దయచేసి మీ లొకేషన్ షేర్ చేయండి*\n\n📎 → Location ట్యాప్ చేయండి లేదా ఊరి పేరు టైప్ చేయండి:", ctx
+        return "📍 *Please share your location*\n\nTap 📎 → Location OR type your village name:", ctx
+    
+    if state == "waiting_for_location":
+        # Check if user typed a village name
+        detected_village = detect_village_from_text(msg)
+        if detected_village:
+            ctx["village"] = detected_village
+        else:
+            ctx["location_text"] = msg
+        
+        ctx["state"] = "c_pri"
+        if lang == "te":
+            return "⚡ *ఎంత అత్యవసరం?*\n\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ\n\nసంఖ్య టైప్ చేయండి:", ctx
+        return "⚡ *How urgent is this?*\n\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High\n\nReply with 1, 2, or 3:", ctx
+    
+    if state == "c_pri":
+        pmap = {"1": "low", "2": "medium", "3": "high"}
+        if msg not in pmap:
+            return "Please reply 1, 2, or 3:", ctx
+        ref = new_id("CMP-")
+        rec = {
+            "id": ref, "name": ctx["c_name"], "phone": ctx["c_phone"],
+            "category": ctx["c_cat"], "desc": ctx["c_desc"],
+            "location": ctx.get("village", ctx.get("location_text", "")),
+            "priority": pmap[msg], "filed_at": now_str(),
+            "location_lat": ctx.get("location_lat"), "location_lng": ctx.get("location_lng"),
+            "location_address": ctx.get("location_address", ""), "maps_link": ctx.get("maps_link", ""),
+            "media_type": ctx.get("media_type", ""), "media_url": ctx.get("media_url", "")
+        }
         insert_complaint(rec)
-        ctx={"state":"idle","lang":lang}
-        return f"Complaint Registered!\n\nName: {rec['name']}\nCategory: {rec['category']}\nLocation: {rec['location']}\nPriority: {PRI_MAP[rec['priority']]}\nReference ID: {ref}\n\nSave your ID.\nResolution: 3-7 days.\n\nType menu.",ctx
-
-    # CERTIFICATE
-    if state=="cert_type":
-        if msg not in CERT_TYPES: return "Choose 1-6.",ctx
-        ctx["cert_type"]=CERT_TYPES[msg]; ctx["state"]="cert_name"; return f"Certificate: {ctx['cert_type']}\n\nApplicant full name:",ctx
-    if state=="cert_name":
-        ctx["cert_name"]=msg.title(); ctx["state"]="cert_father"; return "Father's / husband's name:",ctx
-    if state=="cert_father":
-        ctx["cert_father"]=msg.title(); ctx["state"]="cert_phone"; return "Mobile number:",ctx
-    if state=="cert_phone":
-        if not(msg.isdigit() and len(msg)>=10): return "Enter 10-digit number.",ctx
-        ctx["cert_phone"]=msg; ctx["state"]="cert_purpose"; return "Purpose?\n(e.g. Bank loan, School admission)",ctx
-    if state=="cert_purpose":
-        ref=new_id("CERT-")
-        rec={"id":ref,"type":ctx["cert_type"],"name":ctx["cert_name"],"father":ctx["cert_father"],
-             "phone":ctx["cert_phone"],"purpose":msg,"filed_at":now_str()}
+        
+        reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
+        
+        if rec.get("maps_link"):
+            reply += f"\n\n🗺️ Location Map: {rec['maps_link']}"
+        
+        reply += "\n\nSave this ID for tracking. Resolution within 3-7 days.\n\nType *menu* for main menu"
+        
+        ctx = {"state": "idle", "lang": lang}
+        return reply, ctx
+    
+    # ── CERTIFICATE FLOW ──
+    if state == "cert_type":
+        if msg not in CERT_TYPES:
+            return "Please choose 1-6:", ctx
+        ctx["cert_type"] = CERT_TYPES[msg]
+        ctx["state"] = "cert_name"
+        if lang == "te":
+            return f"📄 *సర్టిఫికెట్:* {ctx['cert_type']}\n\nపూర్తి పేరు టైప్ చేయండి:", ctx
+        return f"📄 *Certificate:* {ctx['cert_type']}\n\nApplicant full name:", ctx
+    
+    if state == "cert_name":
+        ctx["cert_name"] = msg.title()
+        ctx["state"] = "cert_father"
+        if lang == "te":
+            return "👨 *తండ్రి/భర్త పేరు:*", ctx
+        return "👨 *Father's / Husband's name:*", ctx
+    
+    if state == "cert_father":
+        ctx["cert_father"] = msg.title()
+        ctx["state"] = "cert_phone"
+        if lang == "te":
+            return "📱 *మొబైల్ నంబర్ (10 అంకెలు):*", ctx
+        return "📱 *Mobile number (10 digits):*", ctx
+    
+    if state == "cert_phone":
+        if not (msg.isdigit() and len(msg) >= 10):
+            return "Please enter a valid 10-digit number:", ctx
+        ctx["cert_phone"] = msg
+        ctx["state"] = "cert_purpose"
+        if lang == "te":
+            return "📝 *ప్రయోజనం* (ఉదా: బ్యాంక్ లోన్, కళాశాల ప్రవేశం):", ctx
+        return "📝 *Purpose* (e.g., Bank loan, College admission):", ctx
+    
+    if state == "cert_purpose":
+        ref = new_id("CERT-")
+        rec = {
+            "id": ref, "type": ctx["cert_type"], "name": ctx["cert_name"],
+            "father": ctx["cert_father"], "phone": ctx["cert_phone"],
+            "purpose": msg, "filed_at": now_str()
+        }
         insert_certificate(rec)
-        ctx={"state":"idle","lang":lang}
-        return f"Certificate Request Submitted!\n\nName: {rec['name']}\nType: {rec['type']}\nReference ID: {ref}\n\nSave your ID.\nProcessing: 5-7 days.\n\nType menu.",ctx
-
-    # TRACK
-    if state=="track_id":
-        ref=msg.upper().strip(); ctx["state"]="idle"
-        rec=get_record(ref)
-        if not rec: return f"ID {ref} not found.\n\nType menu.",ctx
-        st=STATUS_MAP.get(rec.get("status",""),rec.get("status",""))
+        ctx = {"state": "idle", "lang": lang}
+        if lang == "te":
+            return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n📅 తేదీ: {rec['filed_at']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n📅 Date: {rec['filed_at']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", ctx
+    
+    # ── TRACK STATUS ──
+    if state == "track_id":
+        ref = msg.upper().strip()
+        ctx["state"] = "idle"
+        rec = get_record(ref)
+        if not rec:
+            if lang == "te":
+                return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+            return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", ctx
+        
+        st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
-            return f"Complaint Status\n\nName: {rec['name']}\nCategory: {rec.get('category','')}\nLocation: {rec.get('location','')}\nFiled: {rec.get('filed_at','')}\nStatus: {st}\n\nType menu.",ctx
-        return f"Certificate Status\n\nName: {rec['name']}\nType: {rec.get('type','')}\nFiled: {rec.get('filed_at','')}\nStatus: {st}\n\nType menu.",ctx
+            if lang == "te":
+                return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+            return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", ctx
+        
+        if lang == "te":
+            return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec.get('type', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
+        return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec.get('type', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", ctx
+    
+    # Default fallback
+    ctx["state"] = "idle"
+    return get_menu(ctx), ctx
 
-    ctx["state"]="idle"; return "Let's start over.\n\n"+get_menu(ctx),ctx
-
-# ── Routes ────────────────────────────────────────────────────
-CHIPS = ["1 Complaint","2 Certificate","3 Track Status","4 Schemes","5 Works","6 Announcements"]
-
-@app.route("/", methods=["GET","POST"])
-def chat_view():
-    if "chat" not in session:
-        session["chat"]=[("bot",MENU_EN,fmt_time())]
-        session["ctx"]={"state":"idle","lang":"en"}
-        session.modified=True
-    chips=CHIPS if session["ctx"].get("state")=="idle" else []
-    if request.method=="POST":
-        um=request.form.get("message","").strip()
-        if not um: return redirect("/")
-        session["chat"].append(("user",um,fmt_time()))
-        reply,nc=bot_reply(um,dict(session["ctx"]))
-        session["ctx"]=nc
-        session["chat"].append(("bot",reply,fmt_time()))
-        session.modified=True
-        chips=CHIPS if session["ctx"].get("state")=="idle" else []
-    session["chat"]=session["chat"][-80:]
-    return render_template_string(CHAT_HTML,chat=session["chat"],chips=chips,
-        village=VILLAGE_NAME,sarpanch=SARPANCH_NAME)
-
-@app.route("/sarpanch")
-def dashboard():
-    ac=all_complaints(); ce=all_certs(); wo=all_works(); an=all_announcements()
-    counts=dict(
-        pc=sum(1 for x in ac if x["status"] in ("pending","in_review","in_progress")),
-        cert=sum(1 for x in ce if x["status"] in ("pending","processing")),
-        res=sum(1 for x in ac+ce if x["status"] in ("resolved","ready")),
-        works=sum(1 for x in wo if x["status"] in ("pending","in_progress")),
-        hi=sum(1 for x in ac if x.get("priority")=="high" and x["status"] not in ("resolved","rejected")),
-    )
-    return render_template_string(DASH_HTML,complaints=ac,certs=ce,works=wo,
-        announcements=an,village=VILLAGE_NAME,sarpanch=SARPANCH_NAME,
-        mandal=MANDAL,now=datetime.now().strftime("%d %b %Y, %H:%M"),
-        c=counts)
-
-@app.route("/caction/<rid>/<action>")
-def c_action(rid,action): update_status("complaints",rid.upper(),action); return redirect("/sarpanch")
-
-@app.route("/certaction/<rid>/<action>")
-def cert_action(rid,action): update_status("certificates",rid.upper(),action); return redirect("/sarpanch")
-
-@app.route("/waction/<rid>/<action>")
-def w_action(rid,action): update_status("works",rid.upper(),action); return redirect("/sarpanch")
-
-@app.route("/addwork",methods=["POST"])
-def add_work():
-    t=request.form.get("title","").strip()
-    if t: insert_work(t)
-    return redirect("/sarpanch")
-
-@app.route("/announce",methods=["POST"])
-def announce():
-    t=request.form.get("title","").strip(); b=request.form.get("body","").strip()
-    if t and b: insert_announcement(t,b)
-    return redirect("/sarpanch")
-
-# ── WhatsApp Webhook Endpoint (Meta API) ─────────────────────
+# ── WhatsApp Webhook (Supports Text, Location, Voice) ────────
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
-    # Meta webhook verification (GET request)
+    # GET request: Meta webhook verification
     if request.method == "GET":
         if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge", "")
         return "Invalid token", 403
-
-    # Incoming message from Meta (POST request)
+    
+    # POST request: Incoming messages
     try:
         data = request.json
         print(f" Webhook received: {data}")
@@ -351,35 +465,166 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
         
-        if msg_type != "text":
-            # For non-text messages, reply accordingly
-            send_whatsapp_message(sender, "Please send text messages only. For complaints, please describe your problem in text.")
-            return "OK", 200
-        
-        user_msg = msg["text"]["body"].strip()
-        print(f" Message from {sender}: {user_msg}")
-        
-        # Get or create session for this user
+        # Get or create session
         if sender not in whatsapp_sessions:
             whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
         
-        # Get bot reply
-        reply, whatsapp_sessions[sender] = bot_reply(user_msg, whatsapp_sessions[sender])
+        session_data = whatsapp_sessions[sender]
         
-        # Send reply via Meta API
-        send_whatsapp_message(sender, reply)
+        # Handle different message types
+        if msg_type == "text":
+            user_msg = msg["text"]["body"].strip()
+            print(f" Text from {sender}: {user_msg}")
+            reply, session_data = bot_reply(user_msg, session_data)
+            send_whatsapp_message(sender, reply)
+        
+        elif msg_type == "location":
+            lat = msg["location"]["latitude"]
+            lng = msg["location"]["longitude"]
+            name = msg["location"].get("name", "")
+            address = msg["location"].get("address", "")
+            maps_link = f"https://maps.google.com/?q={lat},{lng}"
+            detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
+            
+            print(f" Location from {sender}: {lat}, {lng} -> Village: {detected_village}")
+            
+            session_data["location_lat"] = lat
+            session_data["location_lng"] = lng
+            session_data["location_address"] = address or name
+            session_data["maps_link"] = maps_link
+            session_data["village"] = detected_village
+            
+            # If in waiting_for_location state, move to priority
+            if session_data.get("state") == "waiting_for_location":
+                session_data["state"] = "c_pri"
+                lang = session_data.get("lang", "en")
+                if lang == "te":
+                    reply = f"📍 లొకేషన్ అందుకుంది!\n\nగ్రామం: {detected_village}\n\n⚡ ఎంత అత్యవసరం?\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ"
+                else:
+                    reply = f"📍 Location received!\n\nVillage: {detected_village}\n\n⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High"
+                send_whatsapp_message(sender, reply)
+            else:
+                # Just acknowledge location
+                lang = session_data.get("lang", "en")
+                if lang == "te":
+                    reply = f"📍 లొకేషన్ అందుకుంది!\n\nగ్రామం: {detected_village}\n\nమీ ఫిర్యాదును కొనసాగించండి"
+                else:
+                    reply = f"📍 Location received!\n\nVillage: {detected_village}\n\nContinue with your complaint"
+                send_whatsapp_message(sender, reply)
+        
+        elif msg_type == "voice":
+            voice_id = msg["voice"]["id"]
+            # Get voice media URL (requires additional API call)
+            voice_url = f"https://graph.facebook.com/v19.0/{voice_id}"
+            print(f" Voice from {sender}: {voice_id}")
+            
+            media_info = {"type": "voice", "url": voice_url}
+            reply, session_data = bot_reply("", session_data, media_info)
+            send_whatsapp_message(sender, reply)
+        
+        elif msg_type == "image":
+            send_whatsapp_message(sender, "📸 Image received! Please share your location or describe the problem in text.")
+        
+        else:
+            send_whatsapp_message(sender, "Please send text, location, or voice message.")
+        
+        # Save updated session
+        whatsapp_sessions[sender] = session_data
         
     except Exception as e:
         print(f" Webhook error: {e}")
     
     return "OK", 200
 
+# ── Routes ────────────────────────────────────────────────────
+CHIPS = ["1 Complaint", "2 Certificate", "3 Track Status", "4 Schemes", "5 Works", "6 Announcements"]
+
+@app.route("/", methods=["GET", "POST"])
+def chat_view():
+    if "chat" not in session:
+        session["chat"] = [("bot", MENU_EN, fmt_time())]
+        session["ctx"] = {"state": "idle", "lang": "en"}
+        session.modified = True
+    chips = CHIPS if session["ctx"].get("state") == "idle" else []
+    if request.method == "POST":
+        um = request.form.get("message", "").strip()
+        if not um:
+            return redirect("/")
+        session["chat"].append(("user", um, fmt_time()))
+        reply, nc = bot_reply(um, dict(session["ctx"]))
+        session["ctx"] = nc
+        session["chat"].append(("bot", reply, fmt_time()))
+        session.modified = True
+        chips = CHIPS if session["ctx"].get("state") == "idle" else []
+    session["chat"] = session["chat"][-80:]
+    return render_template_string(CHAT_HTML, chat=session["chat"], chips=chips,
+        village=VILLAGE_NAME, sarpanch=SARPANCH_NAME)
+
+@app.route("/sarpanch")
+def dashboard():
+    ac = all_complaints()
+    ce = all_certs()
+    wo = all_works()
+    an = all_announcements()
+    counts = dict(
+        pc=sum(1 for x in ac if x["status"] in ("pending", "in_review", "in_progress")),
+        cert=sum(1 for x in ce if x["status"] in ("pending", "processing")),
+        res=sum(1 for x in ac + ce if x["status"] in ("resolved", "ready")),
+        works=sum(1 for x in wo if x["status"] in ("pending", "in_progress")),
+        hi=sum(1 for x in ac if x.get("priority") == "high" and x["status"] not in ("resolved", "rejected")),
+    )
+    return render_template_string(DASH_HTML, complaints=ac, certs=ce, works=wo,
+        announcements=an, village=VILLAGE_NAME, sarpanch=SARPANCH_NAME,
+        mandal=MANDAL, now=datetime.now().strftime("%d %b %Y, %H:%M"),
+        c=counts)
+
+@app.route("/complaint/<cid>")
+def view_complaint(cid):
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+    complaint = cur.fetchone()
+    conn.close()
+    if not complaint:
+        return "Complaint not found", 404
+    return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint)
+
+@app.route("/caction/<rid>/<action>")
+def c_action(rid, action):
+    update_status("complaints", rid.upper(), action)
+    return redirect("/sarpanch")
+
+@app.route("/certaction/<rid>/<action>")
+def cert_action(rid, action):
+    update_status("certificates", rid.upper(), action)
+    return redirect("/sarpanch")
+
+@app.route("/waction/<rid>/<action>")
+def w_action(rid, action):
+    update_status("works", rid.upper(), action)
+    return redirect("/sarpanch")
+
+@app.route("/addwork", methods=["POST"])
+def add_work():
+    t = request.form.get("title", "").strip()
+    if t:
+        insert_work(t)
+    return redirect("/sarpanch")
+
+@app.route("/announce", methods=["POST"])
+def announce():
+    t = request.form.get("title", "").strip()
+    b = request.form.get("body", "").strip()
+    if t and b:
+        insert_announcement(t, b)
+    return redirect("/sarpanch")
+
 @app.route("/sessions")
 def sessions():
-    rows="".join(f"<tr><td>{p}</td><td>{c.get('state','?')}</td><td>{c.get('lang','en')}</td></tr>" for p,c in whatsapp_sessions.items())
+    rows = "".join(f"<tr><td>{p}</td><td>{c.get('state','?')}</td><td>{c.get('lang','en')}</td></tr>" for p, c in whatsapp_sessions.items())
     return f"<html><body style='font-family:monospace;padding:20px'><h3>Sessions ({len(whatsapp_sessions)})</h3><table border=1 cellpadding=8><tr><th>Phone</th><th>State</th><th>Lang</th></tr>{rows or '<tr><td colspan=3>None</td></tr>'}</table><br><a href='/sarpanch'>Dashboard</a></body></html>"
 
-# ── HTML Templates (No photo) ────────────────────────────────
+# ── HTML Templates ────────────────────────────────────────────
 CHAT_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ village }}</title>
@@ -467,6 +712,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .af,.wf{padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
 .af input,.wf input{flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;min-width:140px}
 .af button,.wf button{background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600}
+.map-link{color:#1a73e8;text-decoration:none;font-weight:500}
+.audio-player{width:100%;margin-top:5px}
 </style></head><body>
 <div class="tb">
   <div class="tl">
@@ -484,11 +731,12 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
   <div class="sh">Complaints Queue <span>Pending + In Review + In Progress</span></div>
   {% set ac=complaints|selectattr("status","in",["pending","in_review","in_progress"])|list %}
-  {% if ac %}<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% if ac %}<tr><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
     <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.category }}</td><td>{{ x.location }}</td>
+    <td>{{ x.category }}</td>
+    <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td>
     <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
     <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
     <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
@@ -497,6 +745,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
       {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
       <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
+      <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
     </div></td>
   </tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty">No active complaints!</div>{% endif %}
@@ -504,11 +753,12 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
   <div class="sh">Certificate Requests <span>Pending + Processing</span></div>
   {% set ac=certs|selectattr("status","in",["pending","processing"])|list %}
-  {% if ac %}</td><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+  {% if ac %}<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
   {% for x in ac %}<tr>
     <td>{{ loop.index }}</td><td><strong>{{ x.id }}</strong></td>
     <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.type }}</td><td>{{ x.purpose }}</td>
+    <td>{{ x.type }}</td>
+    <td>{{ x.purpose }}</td>
     <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
     <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
     <td><div class="acts">
@@ -523,7 +773,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sh">Development Works</div>
   {% if works %}<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
   {% for w in works %}<tr>
-    <td><strong>{{ w.id }}</strong></td><td>{{ w.title }}</td>
+    <td><strong>{{ w.id }}</strong></td>
+    <td>{{ w.title }}</td>
     <td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
     <td style="font-size:11px;color:#888">{{ w.updated }}</td>
     <td><div class="acts">
@@ -531,7 +782,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
       <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
     </div></td>
-  </tr>{% endfor %}</tbody></table>
+  </tr>{% endfor %}</tbody></tr>
   {% else %}<div class="empty">No works added.</div>{% endif %}
   <form method="post" action="/addwork" class="wf">
     <input type="text" name="title" placeholder="Add new work" required>
@@ -542,7 +793,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   <div class="sh">Announcements</div>
   {% if announcements %}<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}<tr>
-    <td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td>
+    <td><strong>{{ a.title }}</strong></td>
+    <td>{{ a.body }}</td>
     <td style="font-size:11px;color:#888">{{ a.date }}</td>
   </tr>{% endfor %}</tbody></table>
   {% else %}<div class="empty">No announcements.</div>{% endif %}
@@ -552,17 +804,107 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
     <button type="submit">Post</button>
   </form>
 </div>
-<div class="sec">
-  <div class="sh">Resolved / Closed</div>
-  {% set dc=complaints|selectattr("status","in",["resolved","rejected"])|list %}
-  {% set dce=certs|selectattr("status","in",["ready","rejected"])|list %}
-  {% if dc or dce %}<table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th></tr></thead><tbody>
-  {% for x in dc %}<tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td></tr>{% endfor %}
-  {% for x in dce %}<tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td></tr>{% endfor %}
-  </tbody></table>
-  {% else %}<div class="empty">No resolved items.</div>{% endif %}
-</div>
 </body></html>"""
+
+COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
+<html>
+<head><title>Complaint Details</title>
+<style>
+body{font-family: Arial; margin:0; background:#f5f5f5}
+.header{background:#4a7c59; color:white; padding:15px 20px}
+.container{max-width:800px; margin:30px auto; background:white; padding:25px; border-radius:10px}
+.field{margin-bottom:15px}
+.label{font-weight:bold; width:150px; display:inline-block}
+button{background:#1a73e8; color:white; border:none; padding:10px 20px; border-radius:5px; cursor:pointer}
+.reply-box{width:100%; padding:10px; margin:10px 0; border:1px solid #ddd; border-radius:5px}
+.back-btn{background:#666; color:white; padding:8px 15px; text-decoration:none; display:inline-block; margin-bottom:20px; border-radius:5px}
+hr{margin:20px 0}
+.map-link{color:#1a73e8; text-decoration:none; font-weight:bold}
+.audio-player{width:100%; margin-top:5px}
+</style>
+</head>
+<body>
+<div class="header"><h2>Complaint Details</h2></div>
+<div class="container">
+<a href="/sarpanch" class="back-btn">← Back to Dashboard</a>
+<div class="field"><span class="label">Ticket ID:</span> {{ complaint.id }}</div>
+<div class="field"><span class="label">Citizen Name:</span> {{ complaint.name }}</div>
+<div class="field"><span class="label">Phone:</span> {{ complaint.phone }}</div>
+<div class="field"><span class="label">Category:</span> {{ complaint.category }}</div>
+<div class="field"><span class="label">Location:</span> {{ complaint.location }}</div>
+<div class="field"><span class="label">Priority:</span> {{ complaint.priority|upper }}</div>
+<div class="field"><span class="label">Status:</span> {{ complaint.status.replace('_',' ').title() }}</div>
+<div class="field"><span class="label">Filed:</span> {{ complaint.filed_at }}</div>
+{% if complaint.maps_link %}
+<div class="field">
+    <span class="label">📍 Map Location:</span>
+    <a href="{{ complaint.maps_link }}" target="_blank" class="map-link">🗺️ Click to view on Google Maps</a>
+    <br><small style="color:#666">Coordinates: {{ complaint.location_lat }}, {{ complaint.location_lng }}</small>
+</div>
+{% endif %}
+{% if complaint.media_type == 'voice' and complaint.media_url %}
+<div class="field">
+    <span class="label">🎤 Voice Complaint:</span>
+    <audio controls class="audio-player">
+        <source src="{{ complaint.media_url }}" type="audio/ogg">
+        Your browser does not support audio element.
+    </audio>
+</div>
+{% endif %}
+<div class="field">
+    <span class="label">Complaint:</span><br>
+    <div style="background:#f8f9fa; padding:15px; border-radius:5px">{{ complaint.description }}</div>
+</div>
+<hr>
+<h3>Update Status</h3>
+<form method="POST" action="/update_status">
+<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<select name="status">
+    <option value="pending" {% if complaint.status=='pending' %}selected{% endif %}>Pending</option>
+    <option value="in_review" {% if complaint.status=='in_review' %}selected{% endif %}>In Review</option>
+    <option value="in_progress" {% if complaint.status=='in_progress' %}selected{% endif %}>In Progress</option>
+    <option value="resolved" {% if complaint.status=='resolved' %}selected{% endif %}>Resolved</option>
+    <option value="rejected" {% if complaint.status=='rejected' %}selected{% endif %}>Rejected</option>
+</select>
+<textarea name="notes" placeholder="Add notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
+<button type="submit">Update Status</button>
+</form>
+<hr>
+<h3>Send Reply to Citizen</h3>
+<form method="POST" action="/send_reply">
+<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive on WhatsApp"></textarea>
+<button type="submit">Send Reply</button>
+</form>
+</div>
+</body>
+</html>"""
+
+@app.route("/update_status", methods=["POST"])
+def update_status_route():
+    ticket_id = request.form.get("ticket_id")
+    new_status = request.form.get("status")
+    notes = request.form.get("notes", "")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
+    conn.commit()
+    conn.close()
+    return redirect(f"/complaint/{ticket_id}")
+
+@app.route("/send_reply", methods=["POST"])
+def send_reply_route():
+    ticket_id = request.form.get("ticket_id")
+    reply_message = request.form.get("reply_message")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT phone FROM complaints WHERE id = ?", (ticket_id,))
+    result = cur.fetchone()
+    conn.close()
+    if result:
+        citizen_number = result["phone"] if isinstance(result, dict) else result[0]
+        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {VILLAGE_NAME}")
+    return redirect(f"/complaint/{ticket_id}")
 
 # ── Run ──────────────────────────────────────────────────────
 if __name__ == "__main__":
