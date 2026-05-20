@@ -30,49 +30,19 @@ whatsapp_sessions = {}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── FORCE DATABASE FIX ON STARTUP ─────────────────────────────
-def force_fix_database():
-    print("🔧 Checking database columns...")
-    try:
-        if DATABASE_URL:
-            import psycopg2, psycopg2.extras
-            conn = psycopg2.connect(DATABASE_URL)
-            cur = conn.cursor()
-            columns = [
-                ('location_lat', 'DOUBLE PRECISION'),
-                ('location_lng', 'DOUBLE PRECISION'),
-                ('location_address', 'TEXT'),
-                ('maps_link', 'TEXT'),
-                ('media_type', 'TEXT'),
-                ('media_url', 'TEXT')
-            ]
-            for col, dtype in columns:
-                try:
-                    cur.execute(f"ALTER TABLE complaints ADD COLUMN IF NOT EXISTS {col} {dtype}")
-                    print(f"✅ Added column: {col}")
-                except:
-                    pass
-            conn.commit()
-            conn.close()
-        else:
-            conn = sqlite3.connect("sarpanch.db")
-            cur = conn.cursor()
-            columns = ['location_lat', 'location_lng', 'location_address', 'maps_link', 'media_type', 'media_url']
-            for col in columns:
-                try:
-                    cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} TEXT")
-                    print(f"✅ Added column: {col}")
-                except:
-                    pass
-            conn.commit()
-            conn.close()
-        print("✅ Database columns verified!")
-    except Exception as e:
-        print(f"❌ Database fix error: {e}")
+# ── HELPER FUNCTIONS ─────────────────────────────────────────
+def now_str(): 
+    return datetime.now().strftime("%d-%b-%Y %H:%M")
 
-force_fix_database()
+def fmt_time(): 
+    return datetime.now().strftime("%H:%M")
 
-# ── Database ─────────────────────────────────────────────────
+def new_id(prefix=""): 
+    return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
+
+def get_placeholder(db_type):
+    return "%s" if db_type == "pg" else "?"
+
 def get_db():
     if DATABASE_URL:
         try:
@@ -86,43 +56,204 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
 
-def get_placeholder(db_type):
-    return "%s" if db_type == "pg" else "?"
+# ── FORCE CREATE TABLES ON STARTUP ───────────────────────────
+def force_create_tables():
+    print("🔧 Creating tables if not exist...")
+    try:
+        if DATABASE_URL:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            
+            # Create complaints table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS complaints (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    phone TEXT,
+                    category TEXT,
+                    description TEXT,
+                    location TEXT,
+                    priority TEXT DEFAULT 'medium',
+                    status TEXT DEFAULT 'pending',
+                    filed_at TEXT,
+                    updated_at TEXT,
+                    notes TEXT DEFAULT '',
+                    location_lat DOUBLE PRECISION,
+                    location_lng DOUBLE PRECISION,
+                    location_address TEXT,
+                    maps_link TEXT,
+                    media_type TEXT,
+                    media_url TEXT,
+                    village TEXT DEFAULT ''
+                )
+            """)
+            
+            # Create certificates table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS certificates (
+                    id TEXT PRIMARY KEY,
+                    type TEXT,
+                    name TEXT,
+                    father TEXT,
+                    phone TEXT,
+                    purpose TEXT,
+                    status TEXT DEFAULT 'pending',
+                    filed_at TEXT,
+                    updated_at TEXT,
+                    notes TEXT DEFAULT ''
+                )
+            """)
+            
+            # Create works table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS works (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    status TEXT DEFAULT 'pending',
+                    updated_at TEXT
+                )
+            """)
+            
+            # Create announcements table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id SERIAL PRIMARY KEY,
+                    title TEXT,
+                    body TEXT,
+                    date TEXT
+                )
+            """)
+            
+            # Create sarpanch_users table
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sarpanch_users (
+                    id SERIAL PRIMARY KEY,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL,
+                    village_name TEXT NOT NULL,
+                    phone TEXT,
+                    email TEXT,
+                    photo TEXT,
+                    created_at TEXT
+                )
+            """)
+            
+            # Insert default sarpanch if not exists
+            cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
+            if not cur.fetchone():
+                default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
+                cur.execute("""
+                    INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
+            
+            conn.commit()
+            conn.close()
+            print("✅ PostgreSQL tables created!")
+        else:
+            conn = sqlite3.connect("sarpanch.db")
+            cur = conn.cursor()
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS complaints (
+                    id TEXT PRIMARY KEY,
+                    name TEXT,
+                    phone TEXT,
+                    category TEXT,
+                    description TEXT,
+                    location TEXT,
+                    priority TEXT DEFAULT 'medium',
+                    status TEXT DEFAULT 'pending',
+                    filed_at TEXT,
+                    updated_at TEXT,
+                    notes TEXT DEFAULT '',
+                    location_lat REAL,
+                    location_lng REAL,
+                    location_address TEXT,
+                    maps_link TEXT,
+                    media_type TEXT,
+                    media_url TEXT,
+                    village TEXT DEFAULT ''
+                )
+            """)
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS certificates (
+                    id TEXT PRIMARY KEY,
+                    type TEXT,
+                    name TEXT,
+                    father TEXT,
+                    phone TEXT,
+                    purpose TEXT,
+                    status TEXT DEFAULT 'pending',
+                    filed_at TEXT,
+                    updated_at TEXT,
+                    notes TEXT DEFAULT ''
+                )
+            """)
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS works (
+                    id TEXT PRIMARY KEY,
+                    title TEXT,
+                    status TEXT DEFAULT 'pending',
+                    updated_at TEXT
+                )
+            """)
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS announcements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT,
+                    body TEXT,
+                    date TEXT
+                )
+            """)
+            
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sarpanch_users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE,
+                    password TEXT,
+                    village_name TEXT,
+                    phone TEXT,
+                    email TEXT,
+                    photo TEXT,
+                    created_at TEXT
+                )
+            """)
+            
+            cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
+            if not cur.fetchone():
+                default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
+                cur.execute("""
+                    INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
+            
+            conn.commit()
+            conn.close()
+            print("✅ SQLite tables created!")
+    except Exception as e:
+        print(f"❌ Error creating tables: {e}")
 
+# Run table creation immediately
+force_create_tables()
+
+# ── DATABASE FUNCTIONS ───────────────────────────────────────
 def init_db():
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    ai = "SERIAL" if db_type == "pg" else "INTEGER"
-    autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
-    
-    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT, village TEXT DEFAULT '')")
-    cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
-    cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
-    cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
-    cur.execute(f"CREATE TABLE IF NOT EXISTS sarpanch_users (id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT, village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT)")
-    
-    default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
-    cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
-    if not cur.fetchone():
-        cur.execute(f"INSERT INTO sarpanch_users (username, password, village_name, phone, email, photo, created_at) VALUES ({p},{p},{p},{p},{p},{p},{p})",
-                    ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', '', now_str()))
-    
-    conn.commit()
-    conn.close()
-    print(f" Database ready ({db_type})")
-
-def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
-def fmt_time(): return datetime.now().strftime("%H:%M")
-def new_id(prefix=""): return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
+    print("Database already initialized by force_create_tables()")
 
 def insert_complaint(c):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,location_lat,location_lng,location_address,maps_link,media_type,media_url,village) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
+    cur.execute(f"""
+        INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,updated_at,notes,
+        location_lat,location_lng,location_address,maps_link,media_type,media_url,village) 
+        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
+    """,
         (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
          c.get("location_lat"),c.get("location_lng"),c.get("location_address",""),c.get("maps_link",""),
          c.get("media_type",""),c.get("media_url",""), c.get("village","")))
@@ -133,8 +264,10 @@ def insert_certificate(c):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
+    cur.execute(f"""
+        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,updated_at,notes) 
+        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
+    """,
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
     conn.commit()
     conn.close()
@@ -143,9 +276,8 @@ def get_record(ref_id):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
     tbl = "complaints" if ref_id.startswith("CMP") else "certificates"
-    cur.execute(f"SELECT *,{u} as updated FROM {tbl} WHERE id={p}", (ref_id,))
+    cur.execute(f"SELECT * FROM {tbl} WHERE id = {p}", (ref_id,))
     row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -154,16 +286,14 @@ def update_status(table, ref_id, status):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"UPDATE {table} SET status={p},{u}={p} WHERE id={p}", (status, now_str(), ref_id))
+    cur.execute(f"UPDATE {table} SET status = {p}, updated_at = {p} WHERE id = {p}", (status, now_str(), ref_id))
     conn.commit()
     conn.close()
 
 def all_complaints():
     conn, db_type = get_db()
     cur = conn.cursor()
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"SELECT *,{u} as updated FROM complaints ORDER BY filed_at DESC")
+    cur.execute("SELECT * FROM complaints ORDER BY filed_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -171,8 +301,7 @@ def all_complaints():
 def all_certs():
     conn, db_type = get_db()
     cur = conn.cursor()
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"SELECT *,{u} as updated FROM certificates ORDER BY filed_at DESC")
+    cur.execute("SELECT * FROM certificates ORDER BY filed_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -180,8 +309,7 @@ def all_certs():
 def all_works():
     conn, db_type = get_db()
     cur = conn.cursor()
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"SELECT *,{u} as updated FROM works ORDER BY {u} DESC")
+    cur.execute("SELECT * FROM works ORDER BY updated_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -190,8 +318,7 @@ def active_works():
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"SELECT *,{u} as updated FROM works WHERE status IN ({p},{p})", ("pending","in_progress"))
+    cur.execute(f"SELECT * FROM works WHERE status IN ({p},{p})", ("pending","in_progress"))
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -208,8 +335,8 @@ def insert_work(title):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})", (new_id("WORK-"), title, "pending", now_str()))
+    cur.execute(f"INSERT INTO works (id,title,status,updated_at) VALUES ({p},{p},{p},{p})", 
+                (new_id("WORK-"), title, "pending", now_str()))
     conn.commit()
     conn.close()
 
@@ -246,7 +373,7 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
-# ── Helper Functions ─────────────────────────────────────────
+# ── HELPER FUNCTIONS ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
@@ -268,7 +395,7 @@ def detect_village_from_text(text):
             return village.title()
     return None
 
-# ── WhatsApp API Function ────────────────────────────────────
+# ── WHATSAPP API FUNCTION ────────────────────────────────────
 def send_whatsapp_message(to_number, message):
     if not META_TOKEN:
         print(" META_TOKEN not set")
@@ -297,7 +424,7 @@ def send_whatsapp_message(to_number, message):
         print(f" Error: {e}")
         return False
 
-# ── Menus and Constants ──────────────────────────────────────
+# ── MENUS AND CONSTANTS ──────────────────────────────────────
 MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
     "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
     "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
@@ -318,9 +445,10 @@ SCHEMES = [("Rythu Bandhu","₹5000/acre/season for farmers"),("PM Awas Yojana",
 STATUS_MAP = {"pending":"Pending","in_review":"In Review","in_progress":"In Progress","resolved":"Resolved","rejected":"Rejected","ready":"Ready to Collect","processing":"Processing"}
 PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
-def get_menu(ctx): return MENU_TE if ctx.get("lang")=="te" else MENU_EN
+def get_menu(ctx): 
+    return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── MAIN BOT REPLY FUNCTION ─────────────────────────────────
+# ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -492,7 +620,7 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
-# ── WhatsApp Webhook ────────────────────────────────────────
+# ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     if request.method == "GET":
@@ -572,7 +700,7 @@ def whatsapp_webhook():
     
     return "OK", 200
 
-# ── Routes ────────────────────────────────────────────────────
+# ── ROUTES ────────────────────────────────────────────────────
 @app.route("/")
 def home():
     if 'sarpanch_username' in session:
@@ -587,26 +715,30 @@ def login():
         password = request.form.get("password")
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        
-        cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
-        user = cur.fetchone()
-        conn.close()
-        
-        if user:
-            if isinstance(user, dict):
-                session['sarpanch_username'] = user['username']
-                session['sarpanch_village'] = user['village_name']
-                session['sarpanch_photo'] = user.get('photo', '')
+        try:
+            conn, db_type = get_db()
+            cur = conn.cursor()
+            p = get_placeholder(db_type)
+            
+            cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
+            user = cur.fetchone()
+            conn.close()
+            
+            if user:
+                if isinstance(user, dict):
+                    session['sarpanch_username'] = user['username']
+                    session['sarpanch_village'] = user['village_name']
+                    session['sarpanch_photo'] = user.get('photo', '')
+                else:
+                    session['sarpanch_username'] = user[1]
+                    session['sarpanch_village'] = user[3]
+                    session['sarpanch_photo'] = user[6] if len(user) > 6 else ''
+                return redirect(url_for('dashboard'))
             else:
-                session['sarpanch_username'] = user[1]
-                session['sarpanch_village'] = user[3]
-                session['sarpanch_photo'] = user[6] if len(user) > 6 else ''
-            return redirect(url_for('dashboard'))
-        else:
-            error = "Invalid username or password"
+                error = "Invalid username or password"
+        except Exception as e:
+            print(f"Login error: {e}")
+            error = f"Login error: {str(e)}"
     
     return render_template_string(LOGIN_TEMPLATE, error=error)
 
@@ -1218,7 +1350,7 @@ hr{margin:20px 0}
 </body></html>
 """
 
-# ── Run ──────────────────────────────────────────────────────
+# ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5006))
