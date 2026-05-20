@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD WITH CORRECT STAT BOX FILTERING ────────────────
+# ── DASHBOARD WITH STATS CLICK FILTERING ─────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -707,7 +707,7 @@ def dashboard():
     
     # Get filter parameters
     filter_status = request.args.get('filter_status', 'ALL')
-    filter_type = request.args.get('filter_type', 'complaints')  # complaints, certificates, works
+    filter_type = request.args.get('filter_type', 'all')
     
     try:
         ac = all_complaints()
@@ -715,8 +715,11 @@ def dashboard():
         wo = all_works()
         an = all_announcements()
         
-        # Process complaints
-        active_complaints = []
+        # Process complaints with filters
+        all_complaints_list = []
+        pending_complaints = []
+        in_review_complaints = []
+        in_progress_complaints = []
         resolved_complaints = []
         
         for x in ac:
@@ -757,17 +760,28 @@ def dashboard():
                 }
             
             # Apply status filter
-            if filter_status != 'ALL' and status != filter_status:
-                continue
-            
-            if status in ('pending', 'in_review', 'in_progress'):
-                active_complaints.append(c)
+            if filter_type == 'all':
+                if filter_status == 'ALL' or status == filter_status:
+                    all_complaints_list.append(c)
             else:
+                if filter_status == 'ALL' or status == filter_status:
+                    all_complaints_list.append(c)
+            
+            # Categorize for counts
+            if status == 'pending':
+                pending_complaints.append(c)
+            elif status == 'in_review':
+                in_review_complaints.append(c)
+            elif status == 'in_progress':
+                in_progress_complaints.append(c)
+            elif status in ('resolved', 'rejected'):
                 resolved_complaints.append(c)
         
         # Process certificates
-        active_certs = []
-        resolved_certs = []
+        pending_certs = []
+        processing_certs = []
+        ready_certs = []
+        
         for x in ce:
             if isinstance(x, dict):
                 status = x.get('status', 'pending')
@@ -784,84 +798,70 @@ def dashboard():
                     'status': status, 'filed_at': x[7] if len(x) > 7 else ''
                 }
             
-            if status in ('pending', 'processing'):
-                active_certs.append(cert)
-            else:
-                resolved_certs.append(cert)
+            if status == 'pending':
+                pending_certs.append(cert)
+            elif status == 'processing':
+                processing_certs.append(cert)
+            elif status in ('ready', 'rejected'):
+                ready_certs.append(cert)
         
         # Process works
-        works = []
+        all_works_list = []
         for w in wo:
             if isinstance(w, dict):
-                works.append({
+                all_works_list.append({
                     'id': w.get('id', ''), 'title': w.get('title', ''), 
                     'status': w.get('status', 'pending'), 'updated': w.get('updated', '')
                 })
             else:
-                works.append({
+                all_works_list.append({
                     'id': w[0], 'title': w[1], 'status': w[2] if len(w) > 2 else 'pending',
                     'updated': w[3] if len(w) > 3 else ''
                 })
         
         # Process announcements
-        announcements = []
+        announcements_list = []
         for a in an:
             if isinstance(a, dict):
-                announcements.append({
+                announcements_list.append({
                     'id': a.get('id', ''), 'title': a.get('title', ''), 
                     'body': a.get('body', ''), 'date': a.get('date', '')
                 })
             else:
-                announcements.append({
+                announcements_list.append({
                     'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3] if len(a) > 3 else ''
                 })
         
-        # Counts for stats boxes (unfiltered)
-        all_active = []
-        for x in ac:
-            if isinstance(x, dict):
-                status = x.get('status', 'pending')
-                priority = x.get('priority', 'medium')
-            else:
-                status = x[7] if len(x) > 7 else 'pending'
-                priority = x[6] if len(x) > 6 else 'medium'
-            if status in ('pending', 'in_review', 'in_progress'):
-                all_active.append({'status': status, 'priority': priority})
-        
-        # Calculate resolved count
-        resolved_count = 0
-        for x in ac:
-            if isinstance(x, dict):
-                if x.get('status') in ('resolved', 'rejected'):
-                    resolved_count += 1
-            else:
-                if len(x) > 7 and x[7] in ('resolved', 'rejected'):
-                    resolved_count += 1
-        
-        # Active works count
-        active_works_count = len([w for w in works if w.get('status') in ('pending', 'in_progress')])
-        
-        # High priority count
-        high_priority_count = len([c for c in all_active if c.get('priority') == 'high'])
-        
+        # Counts for stat boxes
         counts = {
-            'pc': len(all_active),
-            'cert': len(active_certs),
-            'res': resolved_count,
-            'works': active_works_count,
-            'hi': high_priority_count
+            'pending': len(pending_complaints),
+            'in_review': len(in_review_complaints),
+            'in_progress': len(in_progress_complaints),
+            'cert_pending': len(pending_certs),
+            'cert_processing': len(processing_certs),
+            'resolved': len(resolved_complaints),
+            'works': len([w for w in all_works_list if w.get('status') in ('pending', 'in_progress')]),
+            'high': len([c for c in all_complaints_list if c.get('priority') == 'high'])
         }
         
-        # For Active Works click - show works section only
-        show_works_section = (filter_type == 'works')
+        # Determine which section to show based on filter_type
+        show_complaints = (filter_type == 'all' or filter_type == 'complaints')
+        show_certificates = (filter_type == 'all' or filter_type == 'certificates')
+        show_works = (filter_type == 'all' or filter_type == 'works')
+        show_announcements = (filter_type == 'all')
+        show_resolved = (filter_type == 'all' or filter_type == 'resolved')
         
         return render_template_string(DASH_HTML, 
-            active_complaints=active_complaints,
+            all_complaints=all_complaints_list,
+            pending_complaints=pending_complaints,
+            in_review_complaints=in_review_complaints,
+            in_progress_complaints=in_progress_complaints,
             resolved_complaints=resolved_complaints,
-            active_certs=active_certs,
-            resolved_certs=resolved_certs,
-            works=works,
-            announcements=announcements,
+            pending_certs=pending_certs,
+            processing_certs=processing_certs,
+            ready_certs=ready_certs,
+            works=all_works_list,
+            announcements=announcements_list,
             village=village,
             username=username,
             photo=photo,
@@ -870,7 +870,11 @@ def dashboard():
             c=counts,
             filter_status=filter_status,
             filter_type=filter_type,
-            show_works_section=show_works_section)
+            show_complaints=show_complaints,
+            show_certificates=show_certificates,
+            show_works=show_works,
+            show_announcements=show_announcements,
+            show_resolved=show_resolved)
     except Exception as e:
         print(f"Dashboard error: {e}")
         return f"Dashboard error: {str(e)}", 500
@@ -1066,7 +1070,7 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:360px;height:360px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59}
+.photo-preview{width:360px;height:360px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59;border-radius:50%}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
@@ -1203,8 +1207,11 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 :root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.tl{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
-.avatar{width:120px;height:120px;object-fit:cover;border:3px solid rgba(255,255,255,.4);border-radius:50%}
+.tl{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}
+.avatar{width:360px;height:360px;object-fit:cover;border:3px solid rgba(255,255,255,.4);border-radius:50%}
+.village-info{text-align:center}
+.village-info h1{font-size:18px}
+.village-info .ts{font-size:12px;opacity:.75}
 .nav-links{display:flex;gap:15px;flex-wrap:wrap}
 .nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
@@ -1214,23 +1221,17 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .sc .val{font-size:24px;font-weight:700}
 .sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
 .sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
-.filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
-.filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0;font-size:12px}
-.filter-btn.active{background:var(--green);color:white}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:800px}
+table{width:100%;border-collapse:collapse;min-width:600px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
-.sortable{cursor:pointer;user-select:none}
-.sortable:hover{background:#e8e8e8}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
 .badge.pending{background:#fff4e0;color:var(--amber)}
 .badge.in_review{background:#dbeafe;color:var(--blue)}
 .badge.in_progress{background:#e0e7ff;color:#4338ca}
 .badge.resolved{background:#dcfce7;color:var(--green)}
 .badge.rejected{background:#fee2e2;color:var(--red)}
-.ph{color:var(--red);font-weight:700}.pm{color:var(--amber)}.pl{color:var(--green)}
 .acts{display:flex;gap:5px;flex-wrap:wrap}
 .btn{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;text-decoration:none;display:inline-block}
 .bb{background:var(--blue);color:#fff}.bg{background:var(--green);color:#fff}
@@ -1238,9 +1239,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 .empty{text-align:center;padding:28px;color:var(--sub);font-size:13px}
 .map-link{color:#1a73e8;text-decoration:none}
 @media (max-width:768px){
-.avatar{width:80px;height:80px}
+.avatar{width:200px;height:200px}
 .stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
-.tb{flex-direction:column;gap:10px;text-align:center}.tl{justify-content:center}.nav-links{justify-content:center}
+.tb{flex-direction:column;gap:15px;text-align:center}
+.nav-links{justify-content:center}
+.tl{align-items:center}
 }
 </style>
 </head>
@@ -1248,7 +1251,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="tb">
 <div class="tl">
 {% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>{% endif %}
-<div><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
+<div class="village-info"><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
 </div>
 <div class="nav-links">
 <a href="/profile">Profile</a>
@@ -1257,60 +1260,27 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div>
 </div>
 <div class="stats">
-<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_type=complaints'"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2" onclick="window.location.href='?filter_status=pending&filter_type=complaints'"><div class="val">{{ c.cert }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_type=complaints'"><div class="val">{{ c.res }}</div><div class="lbl">Resolved</div></div>
+<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_type=all'"><div class="val">{{ c.pending + c.in_review + c.in_progress }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_type=certificates'"><div class="val">{{ c.cert_pending + c.cert_processing }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_type=complaints'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
 <div class="sc c4" onclick="window.location.href='?filter_type=works'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high&filter_type=complaints'"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_type=all&filter_priority=high'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
 </div>
-{% if filter_type == 'works' %}
+{% if show_complaints %}
 <div class="sec">
-<div class="sh">🛠️ Development Works</div>
-{% if works %}
+<div class="sh">📋 Complaints</div>
+{% if all_complaints %}
 <table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Problem</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
-{% for w in works %}
-<tr><td><strong>{{ w.id }}</strong></td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td style="font-size:11px;color:#888">{{ w.updated }}</td>
-<td><div class="acts">
-{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
-{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
-<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</div></td></tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}<div class="empty">No works added.</div>{% endif %}
-<form method="post" action="/addwork" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
-<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
-</form>
-</div>
-{% else %}
-<div class="filter-bar">
-<span style="font-size:12px;color:#666">Filter by Status:</span>
-<a href="?filter_status=ALL&filter_type=complaints"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending&filter_type=complaints"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review&filter_type=complaints"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress&filter_type=complaints"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved&filter_type=complaints"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
-</div>
-<div class="sec">
-<div class="sh">📋 Active Complaints</div>
-{% if active_complaints %}
-<table>
-<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Problem/Complaint</th><th>Location/Village</th><th class="sortable" onclick="sortTable(6)">Priority</th><th class="sortable" onclick="sortTable(7)">Filed</th><th class="sortable" onclick="sortTable(8)">Status</th><th>Actions</th></tr></thead>
-<tbody>
-{% for x in active_complaints %}
+{% for x in all_complaints %}
 <tr>
-<td>{{ loop.index }}</td>
 <td><strong>{{ x.id }}</strong></td>
-<td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
+<td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
 <td>{{ x.category }}</td>
 <td><small>{{ x.description[:50] }}{% if x.description|length > 50 %}...{% endif %}</small></td>
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
-<td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
 <td class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
@@ -1322,39 +1292,59 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </tr>
 {% endfor %}
 </tbody>
-</tr>
-{% else %}<div class="empty">No active complaints!</div>{% endif %}
+</table>
+{% else %}<div class="empty">No complaints found.</div>{% endif %}
 </div>
+{% endif %}
+{% if show_certificates %}
 <div class="sec">
 <div class="sh">📋 Certificate Requests</div>
-{% if active_certs %}
-<tr>
-<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+{% if pending_certs or processing_certs %}
+<table>
+<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
-{% for x in active_certs %}
-<tr>
-<td>{{ loop.index }}</td>
-<td><strong>{{ x.id }}</strong></td>
-<td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
-<td>{{ x.type }}</td>
-<td>{{ x.purpose }}</td>
-<td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
-<td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><div class="acts">
-{% if x.status=='pending' %}<a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a>{% endif %}
-{% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
-<a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
-</div></td>
-</tr>
+{% for x in pending_certs %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
+<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+{% endfor %}
+{% for x in processing_certs %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
+<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 </tbody>
 </table>
-{% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
+{% else %}<div class="empty">No pending certificate requests.</div>{% endif %}
 </div>
+{% endif %}
+{% if show_works %}
+<div class="sec">
+<div class="sh">🛠️ Development Works</div>
+{% if works %}
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<tbody>
+{% for w in works %}
+<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
+<td class="acts">
+{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
+{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
+</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}<div class="empty">No works added.</div>{% endif %}
+<form method="post" action="/addwork" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
+</form>
+</div>
+{% endif %}
+{% if show_announcements %}
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+<td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
 {% for a in announcements %}
 <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
 {% endfor %}
@@ -1366,37 +1356,20 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
 </form>
 </div>
+{% endif %}
+{% if show_resolved %}
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
+<td><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
 {% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
 </tbody></table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 {% endif %}
-<script>
-function sortTable(colIndex){
-var table=document.querySelector('.sec table');
-if(!table)return;
-var tbody=table.querySelector('tbody');
-var rows=Array.from(tbody.querySelectorAll('tr'));
-var ascending=table.getAttribute('data-sort-asc')===colIndex.toString()?false:true;
-rows.sort(function(a,b){
-var aVal=a.cells[colIndex].innerText.trim();
-var bVal=b.cells[colIndex].innerText.trim();
-if(colIndex===6){var pOrder={LOW:1,MEDIUM:2,HIGH:3};aVal=pOrder[aVal]||0;bVal=pOrder[bVal]||0;}
-else if(colIndex===7){aVal=new Date(aVal);bVal=new Date(bVal);}
-if(aVal<bVal)return ascending?-1:1;
-if(aVal>bVal)return ascending?1:-1;
-return 0;
-});
-rows.forEach(function(row){tbody.appendChild(row);});
-table.setAttribute('data-sort-asc',ascending?colIndex:'');
-}
-</script>
 </body></html>
 """
 
