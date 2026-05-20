@@ -1004,7 +1004,7 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:320px;height:320px;border-radius:50%;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59}
+.photo-preview{width:320px;height:320px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:8px;border:1px solid #ddd;border-radius:5px}
@@ -1060,7 +1060,7 @@ body{font-family:Arial;margin:0;background:#f0f2f5}
 table{width:100%;border-collapse:collapse}
 th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}
 th{background:#f4f5f7}
-.photo{width:80px;height:80px;border-radius:50%;object-fit:cover}
+.photo{width:80px;height:80px;object-fit:cover}
 .btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
 .btn-back{background:#666}
 </style>
@@ -1154,7 +1154,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
 .tl{display:flex;align-items:center;gap:14px}
-.avatar{width:320px;height:320px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
+.avatar{width:320px;height:320px;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
 .tb h1{font-size:15px;font-weight:700}
 .ts{font-size:11px;opacity:.75}
 .stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
