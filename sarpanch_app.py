@@ -45,7 +45,7 @@ def init_db():
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
     conn.commit()
     conn.close()
-    print(f"✅ Database ready ({db_type})")
+    print(f" Database ready ({db_type})")
 
 def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
 def fmt_time(): return datetime.now().strftime("%H:%M")
@@ -253,38 +253,22 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         if ml in ("4", "schemes"):
             lines = [f"{n}: {d}" for n, d in SCHEMES]
-            ctx["state"] = "idle"
-            if lang == "te":
-                return "📋 *ప్రభుత్వ పథకాలు*\n\n" + "\n\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
             return "📋 *Government Schemes*\n\n" + "\n\n".join(lines) + "\n\nType *menu* for main menu", ctx
         
         if ml in ("5", "works"):
             rows = active_works()
-            ctx["state"] = "idle"
             if not rows:
-                if lang == "te":
-                    return "🛠️ *ప్రస్తుతం చురుకుగా పనులు లేవు*\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
                 return "🛠️ *No active development works*\n\nType *menu* for main menu", ctx
             lines = [f"• {w['title']} - {STATUS_MAP.get(w['status'], w['status'])}" for w in rows[:5]]
-            if lang == "te":
-                return "🛠️ *అభివృద్ధి పనులు*\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
             return "🛠️ *Development Works*\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", ctx
         
         if ml in ("6", "announcements"):
             rows = all_announcements()[:3]
-            ctx["state"] = "idle"
             if not rows:
-                if lang == "te":
-                    return "📢 *ప్రకటనలు లేవు*\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
                 return "📢 *No announcements*\n\nType *menu* for main menu", ctx
-            if lang == "te":
-                return "📢 *ప్రకటనలు*\n\n" + "\n\n".join(f"• {a['title']}: {a['body']}" for a in rows) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", ctx
             return "📢 *Announcements*\n\n" + "\n\n".join(f"• {a['title']}: {a['body']}" for a in rows) + "\n\nType *menu* for main menu", ctx
         
         if ml in ("7", "info", "office"):
-            ctx["state"] = "idle"
-            if lang == "te":
-                return f"🏛️ *{VILLAGE_NAME} గ్రామ పంచాయతీ*\n\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nజిల్లా: {DISTRICT}\n\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM\nహెల్ప్లైన్: 1800-425-0066\nఅత్యవసరం: 112", ctx
             return f"🏛️ *{VILLAGE_NAME} Gram Panchayat*\n\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nDistrict: {DISTRICT}\n\nOffice Hours: Mon-Sat 10AM-5PM\nHelpline: 1800-425-0066\nEmergency: 112", ctx
         
         # Default - show menu
@@ -337,14 +321,11 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "📍 *Please share your location*\n\nTap 📎 → Location OR type your village name:", ctx
     
     if state == "waiting_for_location":
-        # Check if user typed a village name or sent location
+        # Check if user typed a village name
         detected_village = detect_village_from_text(msg)
         if detected_village:
             ctx["village"] = detected_village
-        elif ctx.get("location_lat"):
-            # Location already set via separate handler
-            pass
-        else:
+        elif not ctx.get("location_lat"):
             ctx["location_text"] = msg
         
         ctx["state"] = "c_pri"
@@ -359,18 +340,31 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return "దయచేసి 1, 2, లేదా 3 టైప్ చేయండి:", ctx
             return "Please reply 1, 2, or 3:", ctx
         
+        # Generate complaint ID
         ref = new_id("CMP-")
+        
+        # Prepare complaint record
         rec = {
-            "id": ref, "name": ctx["c_name"], "phone": ctx["c_phone"],
-            "category": ctx["c_cat"], "desc": ctx["c_desc"],
+            "id": ref,
+            "name": ctx.get("c_name", ""),
+            "phone": ctx.get("c_phone", ""),
+            "category": ctx.get("c_cat", ""),
+            "desc": ctx.get("c_desc", ""),
             "location": ctx.get("village", ctx.get("location_text", "")),
-            "priority": pmap[msg], "filed_at": now_str(),
-            "location_lat": ctx.get("location_lat"), "location_lng": ctx.get("location_lng"),
-            "location_address": ctx.get("location_address", ""), "maps_link": ctx.get("maps_link", ""),
-            "media_type": ctx.get("media_type", ""), "media_url": ctx.get("media_url", "")
+            "priority": pmap[msg],
+            "filed_at": now_str(),
+            "location_lat": ctx.get("location_lat"),
+            "location_lng": ctx.get("location_lng"),
+            "location_address": ctx.get("location_address", ""),
+            "maps_link": ctx.get("maps_link", ""),
+            "media_type": ctx.get("media_type", ""),
+            "media_url": ctx.get("media_url", "")
         }
+        
+        # Save to database
         insert_complaint(rec)
         
+        # Prepare success message
         reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
         
         if rec.get("maps_link"):
@@ -378,49 +372,34 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         reply += "\n\nSave this ID for tracking. Resolution within 3-7 days.\n\nType *menu* for main menu"
         
-        # Reset session
-        new_ctx = {"state": "idle", "lang": lang}
-        return reply, new_ctx
+        # Reset session to idle (THIS IS THE FIX)
+        return reply, {"state": "idle", "lang": lang}
     
     # ── CERTIFICATE FLOW ──
     if state == "cert_type":
         if msg not in CERT_TYPES:
-            if lang == "te":
-                return "దయచేసి 1-6 మధ్య సంఖ్య ఎంచుకోండి:", ctx
             return "Please choose 1-6:", ctx
         ctx["cert_type"] = CERT_TYPES[msg]
         ctx["state"] = "cert_name"
-        if lang == "te":
-            return f"📄 *సర్టిఫికెట్:* {ctx['cert_type']}\n\nపూర్తి పేరు టైప్ చేయండి:", ctx
         return f"📄 *Certificate:* {ctx['cert_type']}\n\nApplicant full name:", ctx
     
     if state == "cert_name":
         if len(msg) < 2:
-            if lang == "te":
-                return "దయచేసి సరైన పేరు టైప్ చేయండి:", ctx
             return "Please enter a valid name:", ctx
         ctx["cert_name"] = msg.title()
         ctx["state"] = "cert_father"
-        if lang == "te":
-            return "👨 *తండ్రి/భర్త పేరు:*", ctx
         return "👨 *Father's / Husband's name:*", ctx
     
     if state == "cert_father":
         ctx["cert_father"] = msg.title()
         ctx["state"] = "cert_phone"
-        if lang == "te":
-            return "📱 *మొబైల్ నంబర్ (10 అంకెలు):*", ctx
         return "📱 *Mobile number (10 digits):*", ctx
     
     if state == "cert_phone":
         if not (msg.isdigit() and len(msg) >= 10):
-            if lang == "te":
-                return "దయచేసి సరైన 10-అంకెల మొబైల్ నంబర్ టైప్ చేయండి:", ctx
             return "Please enter a valid 10-digit number:", ctx
         ctx["cert_phone"] = msg
         ctx["state"] = "cert_purpose"
-        if lang == "te":
-            return "📝 *ప్రయోజనం* (ఉదా: బ్యాంక్ లోన్, కళాశాల ప్రవేశం):", ctx
         return "📝 *Purpose* (e.g., Bank loan, College admission):", ctx
     
     if state == "cert_purpose":
@@ -431,28 +410,19 @@ def bot_reply(user_msg, ctx, media_info=None):
             "purpose": msg, "filed_at": now_str()
         }
         insert_certificate(rec)
-        new_ctx = {"state": "idle", "lang": lang}
-        if lang == "te":
-            return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n📅 తేదీ: {rec['filed_at']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", new_ctx
-        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n📅 Date: {rec['filed_at']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", new_ctx
+        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n📅 Date: {rec['filed_at']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
     # ── TRACK STATUS ──
     if state == "track_id":
         ref = msg.upper().strip()
         rec = get_record(ref)
         if not rec:
-            if lang == "te":
-                return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
             return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
         
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
-            if lang == "te":
-                return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
             return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
         
-        if lang == "te":
-            return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec.get('type', '')}\n📅 నమోదు: {rec.get('filed_at', '')}\n📌 స్థితి: {st}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec.get('type', '')}\n📅 Filed: {rec.get('filed_at', '')}\n📌 Status: {st}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
     # Fallback
@@ -650,7 +620,7 @@ def announce():
         insert_announcement(t, b)
     return redirect("/sarpanch")
 
-# ── HTML Templates (Original Working Dashboard Style) ────────
+# ── HTML Templates ────────────────────────────────────────────
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="20">
