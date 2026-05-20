@@ -1,6 +1,7 @@
-import os, uuid, sqlite3, requests, re
+import os, uuid, sqlite3, requests, re, hashlib
 from datetime import datetime
-from flask import Flask, request, render_template_string, redirect, session
+from flask import Flask, request, render_template_string, redirect, session, url_for
+from werkzeug.utils import secure_filename
 
 # ── Config ───────────────────────────────────────────────────
 VILLAGE_NAME  = os.environ.get("VILLAGE_NAME",  "Kolukonda Village")
@@ -14,9 +15,20 @@ META_TOKEN     = os.environ.get("META_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1173815852473279")
 VERIFY_TOKEN   = os.environ.get("VERIFY_TOKEN", "kolukonda2024")
 
+# File upload config
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
+
 whatsapp_sessions = {}
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # ── FORCE DATABASE FIX ON STARTUP ─────────────────────────────
 def force_fix_database():
@@ -24,7 +36,6 @@ def force_fix_database():
     print("🔧 Checking database columns...")
     try:
         if DATABASE_URL:
-            # PostgreSQL
             import psycopg2, psycopg2.extras
             conn = psycopg2.connect(DATABASE_URL)
             cur = conn.cursor()
@@ -45,7 +56,6 @@ def force_fix_database():
             conn.commit()
             conn.close()
         else:
-            # SQLite
             conn = sqlite3.connect("sarpanch.db")
             cur = conn.cursor()
             columns = ['location_lat', 'location_lng', 'location_address', 'maps_link', 'media_type', 'media_url']
@@ -85,10 +95,21 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
+    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
+    
+    # Sarpanch users table with photo
+    cur.execute(f"CREATE TABLE IF NOT EXISTS sarpanch_users (id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT, village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT)")
+    
+    # Insert default sarpanch if not exists
+    default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
+    cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
+    if not cur.fetchone():
+        cur.execute("INSERT INTO sarpanch_users (username, password, village_name, phone, email, photo, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', '', now_str()))
+    
     conn.commit()
     conn.close()
     print(f" Database ready ({db_type})")
@@ -173,6 +194,31 @@ def insert_announcement(title, body):
     p = "%s" if db_type == "pg" else "?"
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title, body, now_str()))
     conn.commit(); conn.close()
+
+def get_sarpanch_by_username(username):
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = "%s" if db_type == "pg" else "?"
+    cur.execute("SELECT * FROM sarpanch_users WHERE username = ?", (username,))
+    row = cur.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_all_sarpanchs():
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username, village_name, phone, email, photo, created_at FROM sarpanch_users ORDER BY village_name")
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
+
+def update_sarpanch_photo(username, photo_path):
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = "%s" if db_type == "pg" else "?"
+    cur.execute("UPDATE sarpanch_users SET photo = ? WHERE username = ?", (photo_path, username))
+    conn.commit()
+    conn.close()
 
 # ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
@@ -524,26 +570,99 @@ def whatsapp_webhook():
 # ── Routes ────────────────────────────────────────────────────
 @app.route("/")
 def home():
-    return redirect("/sarpanch")
+    if 'sarpanch_username' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
-@app.route("/sarpanch")
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+        
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = "%s" if db_type == "pg" else "?"
+        cur.execute("SELECT * FROM sarpanch_users WHERE username = ? AND password = ?", (username, hashed_password))
+        user = cur.fetchone()
+        conn.close()
+        
+        if user:
+            session['sarpanch_username'] = user['username'] if isinstance(user, dict) else user[1]
+            session['sarpanch_village'] = user['village_name'] if isinstance(user, dict) else user[3]
+            session['sarpanch_photo'] = user['photo'] if isinstance(user, dict) else user[6]
+            return redirect(url_for('dashboard'))
+        else:
+            error = "Invalid username or password"
+    
+    return render_template_string(LOGIN_TEMPLATE, error=error)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
+    username = session['sarpanch_username']
+    user = get_sarpanch_by_username(username)
+    
+    if request.method == "POST":
+        # Handle photo upload
+        if 'photo' in request.files:
+            file = request.files['photo']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(f"{username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                update_sarpanch_photo(username, f"/static/uploads/{filename}")
+                session['sarpanch_photo'] = f"/static/uploads/{filename}"
+        
+        # Update profile info
+        phone = request.form.get("phone", "")
+        email = request.form.get("email", "")
+        
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = "%s" if db_type == "pg" else "?"
+        cur.execute("UPDATE sarpanch_users SET phone = ?, email = ? WHERE username = ?", (phone, email, username))
+        conn.commit()
+        conn.close()
+        
+        return redirect(url_for('profile'))
+    
+    return render_template_string(PROFILE_TEMPLATE, user=user)
+
+@app.route("/dashboard")
 def dashboard():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
+    village = session.get('sarpanch_village', 'Unknown')
+    username = session.get('sarpanch_username')
+    photo = session.get('sarpanch_photo', '')
+    
     ac = all_complaints()
     ce = all_certs()
     wo = all_works()
     an = all_announcements()
     
-    active_complaints = [x for x in ac if x["status"] in ("pending", "in_review", "in_progress")]
-    resolved_complaints = [x for x in ac if x["status"] in ("resolved", "rejected")]
-    active_certs = [x for x in ce if x["status"] in ("pending", "processing")]
-    resolved_certs = [x for x in ce if x["status"] in ("ready", "rejected")]
+    active_complaints = [x for x in ac if x.get("village") == village and x.get("status") in ("pending", "in_review", "in_progress")]
+    resolved_complaints = [x for x in ac if x.get("village") == village and x.get("status") in ("resolved", "rejected")]
+    active_certs = [x for x in ce if x.get("status") in ("pending", "processing")]
+    resolved_certs = [x for x in ce if x.get("status") in ("ready", "rejected")]
     
     counts = dict(
         pc=len(active_complaints),
         cert=len(active_certs),
         res=len(resolved_complaints) + len(resolved_certs),
         works=sum(1 for x in wo if x["status"] in ("pending", "in_progress")),
-        hi=sum(1 for x in ac if x.get("priority") == "high" and x["status"] not in ("resolved", "rejected")),
+        hi=sum(1 for x in ac if x.get("village") == village and x.get("priority") == "high" and x.get("status") not in ("resolved", "rejected")),
     )
     
     return render_template_string(DASH_HTML, 
@@ -553,37 +672,70 @@ def dashboard():
         resolved_certs=resolved_certs,
         works=wo,
         announcements=an,
-        village=VILLAGE_NAME,
-        sarpanch=SARPANCH_NAME,
+        village=village,
+        username=username,
+        photo=photo,
         mandal=MANDAL,
         now=datetime.now().strftime("%d %b %Y, %H:%M"),
         c=counts)
 
 @app.route("/complaint/<cid>")
 def view_complaint(cid):
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
-    complaint = cur.fetchone()
-    conn.close()
-    if not complaint:
-        return "Complaint not found", 404
-    return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint)
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
+        complaint = cur.fetchone()
+        conn.close()
+        
+        if not complaint:
+            return "Complaint not found", 404
+        
+        # Convert to dict
+        if isinstance(complaint, dict):
+            complaint_dict = complaint
+        else:
+            complaint_dict = {key: complaint[key] for key in complaint.keys()}
+        
+        # Ensure all fields exist
+        fields = ['id', 'name', 'phone', 'category', 'description', 'location', 
+                  'priority', 'status', 'filed_at', 'maps_link', 'location_lat', 'location_lng']
+        for field in fields:
+            if field not in complaint_dict:
+                complaint_dict[field] = ''
+        
+        return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
+    except Exception as e:
+        print(f"Error viewing complaint: {e}")
+        return f"Error: {e}", 500
 
 @app.route("/update_status", methods=["POST"])
 def update_status_route():
-    ticket_id = request.form.get("ticket_id")
-    new_status = request.form.get("status")
-    notes = request.form.get("notes", "")
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
-    conn.commit()
-    conn.close()
-    return redirect(f"/complaint/{ticket_id}")
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
+    try:
+        ticket_id = request.form.get("ticket_id")
+        new_status = request.form.get("status")
+        notes = request.form.get("notes", "")
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE complaints SET status = ?, notes = ? WHERE id = ?", (new_status, notes, ticket_id))
+        conn.commit()
+        conn.close()
+        return redirect(url_for('view_complaint', cid=ticket_id))
+    except Exception as e:
+        print(f"Error updating status: {e}")
+        return f"Error: {e}", 500
 
 @app.route("/send_reply", methods=["POST"])
 def send_reply_route():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
     ticket_id = request.form.get("ticket_id")
     reply_message = request.form.get("reply_message")
     conn, db_type = get_db()
@@ -593,40 +745,264 @@ def send_reply_route():
     conn.close()
     if result:
         citizen_number = result["phone"] if isinstance(result, dict) else result[0]
-        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {VILLAGE_NAME}")
-    return redirect(f"/complaint/{ticket_id}")
+        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {session.get('sarpanch_village', '')}")
+    return redirect(url_for('view_complaint', cid=ticket_id))
 
 @app.route("/caction/<rid>/<action>")
 def c_action(rid, action):
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
     update_status("complaints", rid.upper(), action)
-    return redirect("/sarpanch")
+    return redirect(url_for('dashboard'))
 
 @app.route("/certaction/<rid>/<action>")
 def cert_action(rid, action):
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
     update_status("certificates", rid.upper(), action)
-    return redirect("/sarpanch")
+    return redirect(url_for('dashboard'))
 
 @app.route("/waction/<rid>/<action>")
 def w_action(rid, action):
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
     update_status("works", rid.upper(), action)
-    return redirect("/sarpanch")
+    return redirect(url_for('dashboard'))
 
 @app.route("/addwork", methods=["POST"])
 def add_work():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
     t = request.form.get("title", "").strip()
     if t:
         insert_work(t)
-    return redirect("/sarpanch")
+    return redirect(url_for('dashboard'))
 
 @app.route("/announce", methods=["POST"])
 def announce():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
     t = request.form.get("title", "").strip()
     b = request.form.get("body", "").strip()
     if t and b:
         insert_announcement(t, b)
-    return redirect("/sarpanch")
+    return redirect(url_for('dashboard'))
+
+@app.route("/sarpanchs")
+def list_sarpanchs():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    sarpanchs = get_all_sarpanchs()
+    return render_template_string(SARPANCH_LIST_TEMPLATE, sarpanchs=sarpanchs)
+
+@app.route("/add_sarpanch", methods=["GET", "POST"])
+def add_sarpanch():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        village_name = request.form.get("village_name")
+        phone = request.form.get("phone")
+        email = request.form.get("email")
+        
+        if not all([username, password, village_name]):
+            error = "Username, Password, and Village Name are required"
+        else:
+            hashed_password = hashlib.sha256(password.encode()).hexdigest()
+            conn, db_type = get_db()
+            cur = conn.cursor()
+            p = "%s" if db_type == "pg" else "?"
+            try:
+                cur.execute("INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                           (username, hashed_password, village_name, phone, email, now_str()))
+                conn.commit()
+                return redirect(url_for('list_sarpanchs'))
+            except Exception as e:
+                error = f"Username already exists: {e}"
+            finally:
+                conn.close()
+    
+    return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
 # ── HTML TEMPLATES ────────────────────────────────────────────
+LOGIN_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><title>Sarpanch Login</title>
+<style>
+body{font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;margin:0}
+.login-container{background:white;padding:30px;border-radius:10px;width:350px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
+h2{color:#4a7c59;text-align:center}
+input{width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px}
+button{width:100%;padding:10px;background:#4a7c59;color:white;border:none;border-radius:5px;cursor:pointer}
+.error{color:red;text-align:center}
+</style>
+</head>
+<body>
+<div class="login-container">
+<h2>🏘️ Gram Panchayat</h2>
+<h3>Sarpanch Login</h3>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="POST">
+<input type="text" name="username" placeholder="Username" required>
+<input type="password" name="password" placeholder="Password" required>
+<button type="submit">Login</button>
+</form>
+<p style="text-align:center;font-size:12px;margin-top:15px">Contact administrator for credentials</p>
+</div>
+</body></html>
+"""
+
+PROFILE_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><title>My Profile</title>
+<style>
+body{font-family:Arial;margin:0;background:#f0f2f5}
+.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between}
+.container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
+.photo-preview{width:120px;height:120px;border-radius:50%;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59}
+.field{margin-bottom:15px}
+.label{font-weight:bold;display:block;margin-bottom:5px}
+input{width:100%;padding:8px;border:1px solid #ddd;border-radius:5px}
+button{background:#4a7c59;color:white;border:none;padding:10px 20px;border-radius:5px;cursor:pointer}
+.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="header">
+<h2>My Profile</h2>
+<a href="/dashboard" class="btn-back">← Dashboard</a>
+</div>
+<div class="container">
+<form method="POST" enctype="multipart/form-data">
+<div style="text-align:center">
+{% if user.photo %}
+<img src="{{ user.photo }}" class="photo-preview" alt="Profile Photo">
+{% else %}
+<div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center">No Photo</div>
+{% endif %}
+<input type="file" name="photo" accept="image/*">
+</div>
+<div class="field">
+<label class="label">Username</label>
+<input type="text" value="{{ user.username }}" disabled>
+</div>
+<div class="field">
+<label class="label">Village Name</label>
+<input type="text" value="{{ user.village_name }}" disabled>
+</div>
+<div class="field">
+<label class="label">Phone Number</label>
+<input type="tel" name="phone" value="{{ user.phone or '' }}">
+</div>
+<div class="field">
+<label class="label">Email</label>
+<input type="email" name="email" value="{{ user.email or '' }}">
+</div>
+<button type="submit">Update Profile</button>
+</form>
+</div>
+</body></html>
+"""
+
+SARPANCH_LIST_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><title>Sarpanch Users</title>
+<style>
+body{font-family:Arial;margin:0;background:#f0f2f5}
+.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between}
+.container{max-width:1000px;margin:30px auto;background:white;padding:25px;border-radius:10px}
+table{width:100%;border-collapse:collapse}
+th,td{padding:10px;text-align:left;border-bottom:1px solid #ddd}
+th{background:#f4f5f7}
+.photo{width:40px;height:40px;border-radius:50%;object-fit:cover}
+.btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
+.btn-back{background:#666}
+</style>
+</head>
+<body>
+<div class="header">
+<h2>Sarpanch Users</h2>
+<div>
+<a href="/add_sarpanch" class="btn">+ Add Sarpanch</a>
+<a href="/dashboard" class="btn btn-back">← Dashboard</a>
+</div>
+</div>
+<div class="container">
+<table>
+<thead>
+<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
+</thead>
+<tbody>
+{% for s in sarpanchs %}
+<tr>
+<td>{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
+<td>{{ s.username }}</td>
+<td>{{ s.village_name }}</td>
+<td>{{ s.phone or '-' }}</td>
+<td>{{ s.email or '-' }}</td>
+<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</body></html>
+"""
+
+ADD_SARPANCH_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><title>Add Sarpanch</title>
+<style>
+body{font-family:Arial;margin:0;background:#f0f2f5}
+.header{background:#4a7c59;color:white;padding:15px 20px}
+.container{max-width:500px;margin:30px auto;background:white;padding:25px;border-radius:10px}
+.field{margin-bottom:15px}
+.label{font-weight:bold;display:block;margin-bottom:5px}
+input{width:100%;padding:8px;border:1px solid #ddd;border-radius:5px}
+button{background:#4a7c59;color:white;border:none;padding:10px 20px;border-radius:5px;cursor:pointer}
+.error{color:red}
+.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block;margin-bottom:20px}
+</style>
+</head>
+<body>
+<div class="header"><h2>Add New Sarpanch</h2></div>
+<div class="container">
+<a href="/sarpanchs" class="btn-back">← Back</a>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="POST">
+<div class="field">
+<label class="label">Username *</label>
+<input type="text" name="username" required>
+</div>
+<div class="field">
+<label class="label">Password *</label>
+<input type="password" name="password" required>
+</div>
+<div class="field">
+<label class="label">Village Name *</label>
+<input type="text" name="village_name" required>
+</div>
+<div class="field">
+<label class="label">Phone Number</label>
+<input type="tel" name="phone">
+</div>
+<div class="field">
+<label class="label">Email</label>
+<input type="email" name="email">
+</div>
+<button type="submit">Add Sarpanch</button>
+</form>
+</div>
+</body></html>
+"""
+
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="20">
@@ -638,6 +1014,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
 .tl{display:flex;align-items:center;gap:14px}
+.avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
 .tb h1{font-size:15px;font-weight:700}
 .ts{font-size:11px;opacity:.75}
 .stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
@@ -666,10 +1043,23 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .af input,.wf input{flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;min-width:140px}
 .af button,.wf button{background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600}
 .map-link{color:#1a73e8;text-decoration:none;font-weight:500}
+.nav-links{display:flex;gap:15px}
+.nav-links a{color:white;text-decoration:none}
 </style></head><body>
 <div class="tb">
-  <div class="tl"><div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ sarpanch }} · {{ mandal }}</div></div></div>
-  <div style="font-size:12px;opacity:.8">Auto-refresh 20s · {{ now }}</div>
+  <div class="tl">
+    {% if photo %}
+    <img src="{{ photo }}" class="avatar" alt="Profile">
+    {% else %}
+    <div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>
+    {% endif %}
+    <div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
+  </div>
+  <div class="nav-links">
+    <a href="/profile">Profile</a>
+    <a href="/sarpanchs">Sarpanchs</a>
+    <a href="/logout">Logout</a>
+  </div>
 </div>
 <div class="stats">
   <div class="sc c1"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
@@ -761,11 +1151,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   {% if announcements %}
   <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}
-  <tr>
-    <td><strong>{{ a.title }}</strong></td>
-    <td>{{ a.body }}</td>
-    <td style="font-size:11px;color:#888">{{ a.date }}</td>
-  </tr>
+  <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
   {% endfor %}</tbody></table>
   {% else %}<div class="empty">No announcements.</div>{% endif %}
   <form method="post" action="/announce" class="af">
@@ -781,24 +1167,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
   {% if resolved_complaints or resolved_certs %}
   <table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>
   {% for x in resolved_complaints %}
-  <tr>
-    <td>{{ x.id }}</td>
-    <td>Complaint</td>
-    <td>{{ x.name }}</td>
-    <td>{{ x.category }}</td>
-    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-    <td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
-  </tr>
+  <tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
   {% endfor %}
   {% for x in resolved_certs %}
-  <tr>
-    <td>{{ x.id }}</td>
-    <td>Certificate</td>
-    <td>{{ x.name }}</td>
-    <td>{{ x.type }}</td>
-    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-    <td>-</td>
-  </tr>
+  <tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td>-</td></tr>
   {% endfor %}
   </tbody></table>
   {% else %}<div class="empty">No resolved items.</div>{% endif %}
@@ -825,36 +1197,36 @@ hr{margin:20px 0}
 <body>
 <div class="header"><h2>Complaint Details</h2></div>
 <div class="container">
-<a href="/sarpanch" class="back-btn">← Back to Dashboard</a>
-<div class="field"><span class="label">Ticket ID:</span> {{ complaint.id }}</div>
-<div class="field"><span class="label">Citizen Name:</span> {{ complaint.name }}</div>
-<div class="field"><span class="label">Phone:</span> {{ complaint.phone }}</div>
-<div class="field"><span class="label">Category:</span> {{ complaint.category }}</div>
-<div class="field"><span class="label">Location:</span> {{ complaint.location }}</div>
-<div class="field"><span class="label">Priority:</span> {{ complaint.priority|upper }}</div>
-<div class="field"><span class="label">Status:</span> {{ complaint.status.replace('_',' ').title() }}</div>
-<div class="field"><span class="label">Filed:</span> {{ complaint.filed_at }}</div>
-{% if complaint.maps_link %}
+<a href="/dashboard" class="back-btn">← Back to Dashboard</a>
+<div class="field"><span class="label">Ticket ID:</span> {{ complaint.get('id', 'N/A') }}</div>
+<div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
+<div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
+<div class="field"><span class="label">Category:</span> {{ complaint.get('category', 'General') }}</div>
+<div class="field"><span class="label">Location:</span> {{ complaint.get('location', 'Not provided') }}</div>
+<div class="field"><span class="label">Priority:</span> {{ complaint.get('priority', 'medium')|upper }}</div>
+<div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
+<div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
+{% if complaint.get('maps_link') %}
 <div class="field">
     <span class="label">🗺️ Map Location:</span>
-    <a href="{{ complaint.maps_link }}" target="_blank" class="map-link">Click to view on Google Maps</a>
-    <br><small style="color:#666">Coordinates: {{ complaint.location_lat }}, {{ complaint.location_lng }}</small>
+    <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a>
+    <br><small>Lat: {{ complaint.get('location_lat', 'N/A') }}, Lng: {{ complaint.get('location_lng', 'N/A') }}</small>
 </div>
 {% endif %}
 <div class="field">
     <span class="label">Complaint:</span><br>
-    <div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.description }}</div>
+    <div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.get('description', 'No description') }}</div>
 </div>
 <hr>
 <h3>Update Status</h3>
 <form method="POST" action="/update_status">
-<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
 <select name="status">
-    <option value="pending" {% if complaint.status=='pending' %}selected{% endif %}>Pending</option>
-    <option value="in_review" {% if complaint.status=='in_review' %}selected{% endif %}>In Review</option>
-    <option value="in_progress" {% if complaint.status=='in_progress' %}selected{% endif %}>In Progress</option>
-    <option value="resolved" {% if complaint.status=='resolved' %}selected{% endif %}>Resolved</option>
-    <option value="rejected" {% if complaint.status=='rejected' %}selected{% endif %}>Rejected</option>
+    <option value="pending" {% if complaint.get('status')=='pending' %}selected{% endif %}>Pending</option>
+    <option value="in_review" {% if complaint.get('status')=='in_review' %}selected{% endif %}>In Review</option>
+    <option value="in_progress" {% if complaint.get('status')=='in_progress' %}selected{% endif %}>In Progress</option>
+    <option value="resolved" {% if complaint.get('status')=='resolved' %}selected{% endif %}>Resolved</option>
+    <option value="rejected" {% if complaint.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
 </select>
 <textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
 <button type="submit">Update Status</button>
@@ -862,7 +1234,7 @@ hr{margin:20px 0}
 <hr>
 <h3>Send Reply to Citizen</h3>
 <form method="POST" action="/send_reply">
-<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
 <textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
 <button type="submit">Send Reply</button>
 </form>
