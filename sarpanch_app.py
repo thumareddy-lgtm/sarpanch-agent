@@ -218,8 +218,7 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     # Menu navigation
     if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
-        ctx = {"state": "idle", "lang": lang}
-        return get_menu(ctx), ctx
+        return get_menu(ctx), {"state": "idle", "lang": lang}
     
     # Handle media (voice)
     if media_info and media_info.get("type") == "voice":
@@ -333,6 +332,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "⚡ *ఎంత అత్యవసరం?*\n\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ\n\nసంఖ్య టైప్ చేయండి:", ctx
         return "⚡ *How urgent is this?*\n\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High\n\nReply with 1, 2, or 3:", ctx
     
+    # ── FIXED c_pri STATE ──
     if state == "c_pri":
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
@@ -350,7 +350,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             "phone": ctx.get("c_phone", ""),
             "category": ctx.get("c_cat", ""),
             "desc": ctx.get("c_desc", ""),
-            "location": ctx.get("village", ctx.get("location_text", "")),
+            "location": ctx.get("village", ctx.get("location_text", "Not provided")),
             "priority": pmap[msg],
             "filed_at": now_str(),
             "location_lat": ctx.get("location_lat"),
@@ -368,7 +368,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
         
         if rec.get("maps_link"):
-            reply += f"\n\n🗺️ Location Map: {rec['maps_link']}"
+            reply += f"\n\n🗺️ Map: {rec['maps_link']}"
         
         reply += "\n\nSave this ID for tracking. Resolution within 3-7 days.\n\nType *menu* for main menu"
         
