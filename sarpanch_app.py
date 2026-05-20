@@ -23,7 +23,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024  # 5MB max
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
 whatsapp_sessions = {}
 
@@ -32,7 +32,6 @@ def allowed_file(filename):
 
 # ── FORCE DATABASE FIX ON STARTUP ─────────────────────────────
 def force_fix_database():
-    """Add missing columns to complaints table - runs on every startup"""
     print("🔧 Checking database columns...")
     try:
         if DATABASE_URL:
@@ -51,8 +50,8 @@ def force_fix_database():
                 try:
                     cur.execute(f"ALTER TABLE complaints ADD COLUMN IF NOT EXISTS {col} {dtype}")
                     print(f"✅ Added column: {col}")
-                except Exception as e:
-                    print(f"⚠️ Column {col} may already exist: {e}")
+                except:
+                    pass
             conn.commit()
             conn.close()
         else:
@@ -63,15 +62,14 @@ def force_fix_database():
                 try:
                     cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} TEXT")
                     print(f"✅ Added column: {col}")
-                except Exception as e:
-                    print(f"⚠️ Column {col} already exists: {e}")
+                except:
+                    pass
             conn.commit()
             conn.close()
         print("✅ Database columns verified!")
     except Exception as e:
         print(f"❌ Database fix error: {e}")
 
-# Run database fix immediately
 force_fix_database()
 
 # ── Database ─────────────────────────────────────────────────
@@ -95,15 +93,12 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT)")
+    cur.execute(f"CREATE TABLE IF NOT EXISTS complaints (id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, description TEXT, location TEXT, priority TEXT DEFAULT 'medium', status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', location_lat REAL, location_lng REAL, location_address TEXT, maps_link TEXT, media_type TEXT, media_url TEXT, village TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS certificates (id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '')")
     cur.execute(f"CREATE TABLE IF NOT EXISTS works (id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT)")
     cur.execute(f"CREATE TABLE IF NOT EXISTS announcements (id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT)")
-    
-    # Sarpanch users table with photo
     cur.execute(f"CREATE TABLE IF NOT EXISTS sarpanch_users (id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT, village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT)")
     
-    # Insert default sarpanch if not exists
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -119,81 +114,108 @@ def fmt_time(): return datetime.now().strftime("%H:%M")
 def new_id(prefix=""): return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
 
 def insert_complaint(c):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,location_lat,location_lng,location_address,maps_link,media_type,media_url) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
+    cur.execute(f"INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,location_lat,location_lng,location_address,maps_link,media_type,media_url,village) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
         (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
          c.get("location_lat"),c.get("location_lng"),c.get("location_address",""),c.get("maps_link",""),
-         c.get("media_type",""),c.get("media_url","")))
-    conn.commit(); conn.close()
+         c.get("media_type",""),c.get("media_url",""), c.get("village","")))
+    conn.commit()
+    conn.close()
 
 def insert_certificate(c):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes) VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})",
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def get_record(ref_id):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
     tbl = "complaints" if ref_id.startswith("CMP") else "certificates"
     cur.execute(f"SELECT *,{u} as updated FROM {tbl} WHERE id={p}", (ref_id,))
-    row = cur.fetchone(); conn.close()
+    row = cur.fetchone()
+    conn.close()
     return dict(row) if row else None
 
 def update_status(table, ref_id, status):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"UPDATE {table} SET status={p},{u}={p} WHERE id={p}", (status, now_str(), ref_id))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def all_complaints():
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"SELECT *,{u} as updated FROM complaints ORDER BY filed_at DESC")
-    rows = [dict(r) for r in cur.fetchall()]; conn.close(); return rows
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 def all_certs():
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"SELECT *,{u} as updated FROM certificates ORDER BY filed_at DESC")
-    rows = [dict(r) for r in cur.fetchall()]; conn.close(); return rows
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 def all_works():
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"SELECT *,{u} as updated FROM works ORDER BY {u} DESC")
-    rows = [dict(r) for r in cur.fetchall()]; conn.close(); return rows
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 def active_works():
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"SELECT *,{u} as updated FROM works WHERE status IN ({p},{p})", ("pending","in_progress"))
-    rows = [dict(r) for r in cur.fetchall()]; conn.close(); return rows
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 def all_announcements():
-    conn, _ = get_db(); cur = conn.cursor()
+    conn, _ = get_db()
+    cur = conn.cursor()
     cur.execute("SELECT * FROM announcements ORDER BY id DESC")
-    rows = [dict(r) for r in cur.fetchall()]; conn.close(); return rows
+    rows = [dict(r) for r in cur.fetchall()]
+    conn.close()
+    return rows
 
 def insert_work(title):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})", (new_id("WORK-"), title, "pending", now_str()))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def insert_announcement(title, body):
-    conn, db_type = get_db(); cur = conn.cursor()
+    conn, db_type = get_db()
+    cur = conn.cursor()
     p = "%s" if db_type == "pg" else "?"
     cur.execute(f"INSERT INTO announcements (title,body,date) VALUES ({p},{p},{p})", (title, body, now_str()))
-    conn.commit(); conn.close()
+    conn.commit()
+    conn.close()
 
 def get_sarpanch_by_username(username):
     conn, db_type = get_db()
@@ -303,24 +325,20 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}")
     
-    # Language switching
     if ml == "telugu":
         return MENU_TE, {"state": "idle", "lang": "te"}
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
     
-    # Menu navigation
     if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
         return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
-    # Voice message handler
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
         ctx["state"] = "waiting_for_location"
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
     
-    # IDLE STATE - Main Menu
     if state == "idle":
         if ml == "1":
             return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
@@ -346,14 +364,12 @@ def bot_reply(user_msg, ctx, media_info=None):
         else:
             return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
-    # COMPLAINT FLOW - Name
     if state == "c_name":
         if len(msg) < 2:
             return "Please enter valid name (min 2 chars):", ctx
         ctx["c_name"] = msg.title()
         return "📱 Mobile number (10 digits):", {"state": "c_phone", "c_name": ctx["c_name"], "lang": lang}
     
-    # COMPLAINT FLOW - Phone
     if state == "c_phone":
         if not (msg.isdigit() and len(msg) >= 10):
             return "Please enter 10-digit number:", ctx
@@ -361,14 +377,12 @@ def bot_reply(user_msg, ctx, media_info=None):
         cats = "\n".join(f"{k}. {v}" for k, v in COMPLAINT_CATS.items())
         return f"📂 Category:\n{cats}", {"state": "c_cat", "c_name": ctx["c_name"], "c_phone": ctx["c_phone"], "lang": lang}
     
-    # COMPLAINT FLOW - Category
     if state == "c_cat":
         if msg not in COMPLAINT_CATS:
             return "Choose 1-7:", ctx
         ctx["c_cat"] = COMPLAINT_CATS[msg]
         return "📝 Describe the problem:", {"state": "c_desc", "c_name": ctx["c_name"], "c_phone": ctx["c_phone"], "c_cat": ctx["c_cat"], "lang": lang}
     
-    # COMPLAINT FLOW - Description
     if state == "c_desc":
         if len(msg) < 5:
             return "More details please (min 5 chars):", ctx
@@ -376,7 +390,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "waiting_for_location"
         return "📍 Share your location (📎 → Location) or type village name:", ctx
     
-    # WAITING FOR LOCATION
     if state == "waiting_for_location":
         detected_village = detect_village_from_text(msg)
         if detected_village:
@@ -386,12 +399,9 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "c_pri"
         return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
     
-    # FIXED c_pri STATE - Saves complaint after urgency
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
-        
         pmap = {"1": "low", "2": "medium", "3": "high"}
-        
         if msg not in pmap:
             return "⚡ Please reply with:\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
         
@@ -415,22 +425,19 @@ def bot_reply(user_msg, ctx, media_info=None):
             "location_address": ctx.get("location_address", ""),
             "maps_link": maps_link,
             "media_type": ctx.get("media_type", ""),
-            "media_url": ctx.get("media_url", "")
+            "media_url": ctx.get("media_url", ""),
+            "village": village
         }
         
         print(f"🔍 Saving complaint: {rec}")
         insert_complaint(rec)
         
         reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
-        
         if maps_link:
             reply += f"\n🗺️ Map: {maps_link}"
-        
         reply += "\n\nType *menu* for main menu"
-        
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
     
-    # CERTIFICATE FLOW
     if state == "cert_type":
         if msg not in CERT_TYPES:
             return "Choose 1-6:", ctx
@@ -467,7 +474,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         insert_certificate(rec)
         return f"✅ Certificate Request Submitted!\n📋 ID: {ref}\nName: {rec['name']}\nType: {rec['type']}\n\nType menu", {"state": "idle", "lang": lang}
     
-    # TRACK STATUS
     if state == "track_id":
         if len(msg) < 5:
             return "Please enter valid Reference ID (e.g., CMP-XXXXX):", ctx
@@ -480,7 +486,6 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"🔍 Complaint Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
         return f"🔍 Certificate Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
     
-    # Fallback - show menu
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
 # ── WhatsApp Webhook ────────────────────────────────────────
@@ -494,7 +499,6 @@ def whatsapp_webhook():
     try:
         data = request.json
         print(f" Webhook received")
-        
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
@@ -525,15 +529,12 @@ def whatsapp_webhook():
             address = msg["location"].get("address", "")
             maps_link = f"https://maps.google.com/?q={lat},{lng}"
             detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
-            
             print(f" Location from {sender}: {detected_village}")
-            
             session_data["location_lat"] = lat
             session_data["location_lng"] = lng
             session_data["location_address"] = address or name
             session_data["maps_link"] = maps_link
             session_data["village"] = detected_village
-            
             if session_data.get("state") == "waiting_for_location":
                 session_data["state"] = "c_pri"
                 lang = session_data.get("lang", "en")
@@ -590,9 +591,14 @@ def login():
         conn.close()
         
         if user:
-            session['sarpanch_username'] = user['username'] if isinstance(user, dict) else user[1]
-            session['sarpanch_village'] = user['village_name'] if isinstance(user, dict) else user[3]
-            session['sarpanch_photo'] = user['photo'] if isinstance(user, dict) else user[6]
+            if isinstance(user, dict):
+                session['sarpanch_username'] = user['username']
+                session['sarpanch_village'] = user['village_name']
+                session['sarpanch_photo'] = user.get('photo', '')
+            else:
+                session['sarpanch_username'] = user[1]
+                session['sarpanch_village'] = user[3]
+                session['sarpanch_photo'] = user[6] if len(user) > 6 else ''
             return redirect(url_for('dashboard'))
         else:
             error = "Invalid username or password"
@@ -613,7 +619,6 @@ def profile():
     user = get_sarpanch_by_username(username)
     
     if request.method == "POST":
-        # Handle photo upload
         if 'photo' in request.files:
             file = request.files['photo']
             if file and allowed_file(file.filename):
@@ -623,7 +628,6 @@ def profile():
                 update_sarpanch_photo(username, f"/static/uploads/{filename}")
                 session['sarpanch_photo'] = f"/static/uploads/{filename}"
         
-        # Update profile info
         phone = request.form.get("phone", "")
         email = request.form.get("email", "")
         
@@ -643,41 +647,95 @@ def dashboard():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
     
-    village = session.get('sarpanch_village', 'Unknown')
-    username = session.get('sarpanch_username')
+    village = session.get('sarpanch_village', 'Kolukonda')
+    username = session.get('sarpanch_username', 'Sarpanch')
     photo = session.get('sarpanch_photo', '')
     
-    ac = all_complaints()
-    ce = all_certs()
-    wo = all_works()
-    an = all_announcements()
-    
-    active_complaints = [x for x in ac if x.get("village") == village and x.get("status") in ("pending", "in_review", "in_progress")]
-    resolved_complaints = [x for x in ac if x.get("village") == village and x.get("status") in ("resolved", "rejected")]
-    active_certs = [x for x in ce if x.get("status") in ("pending", "processing")]
-    resolved_certs = [x for x in ce if x.get("status") in ("ready", "rejected")]
-    
-    counts = dict(
-        pc=len(active_complaints),
-        cert=len(active_certs),
-        res=len(resolved_complaints) + len(resolved_certs),
-        works=sum(1 for x in wo if x["status"] in ("pending", "in_progress")),
-        hi=sum(1 for x in ac if x.get("village") == village and x.get("priority") == "high" and x.get("status") not in ("resolved", "rejected")),
-    )
-    
-    return render_template_string(DASH_HTML, 
-        active_complaints=active_complaints,
-        resolved_complaints=resolved_complaints,
-        active_certs=active_certs,
-        resolved_certs=resolved_certs,
-        works=wo,
-        announcements=an,
-        village=village,
-        username=username,
-        photo=photo,
-        mandal=MANDAL,
-        now=datetime.now().strftime("%d %b %Y, %H:%M"),
-        c=counts)
+    try:
+        ac = all_complaints()
+        ce = all_certs()
+        wo = all_works()
+        an = all_announcements()
+        
+        active_complaints = []
+        resolved_complaints = []
+        
+        for x in ac:
+            if isinstance(x, dict):
+                complaint_village = x.get('village', '')
+            else:
+                complaint_village = x[17] if len(x) > 17 else ''
+            
+            if complaint_village != village and complaint_village != '':
+                continue
+            
+            if isinstance(x, dict):
+                status = x.get('status', 'pending')
+                c = x
+            else:
+                status = x[7] if len(x) > 7 else 'pending'
+                c = {
+                    'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
+                    'description': x[4], 'location': x[5], 'priority': x[6],
+                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
+                }
+            
+            if status in ('pending', 'in_review', 'in_progress'):
+                active_complaints.append(c)
+            else:
+                resolved_complaints.append(c)
+        
+        certificates = []
+        for x in ce:
+            if isinstance(x, dict):
+                certificates.append(x)
+            else:
+                certificates.append({
+                    'id': x[0], 'type': x[1], 'name': x[2], 'status': x[6], 'filed_at': x[7]
+                })
+        
+        works = []
+        for w in wo:
+            if isinstance(w, dict):
+                works.append(w)
+            else:
+                works.append({
+                    'id': w[0], 'title': w[1], 'status': w[2], 'updated': w[3]
+                })
+        
+        announcements = []
+        for a in an:
+            if isinstance(a, dict):
+                announcements.append(a)
+            else:
+                announcements.append({
+                    'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3]
+                })
+        
+        counts = {
+            'pc': len(active_complaints),
+            'cert': len(certificates),
+            'res': len(resolved_complaints),
+            'works': len(works),
+            'hi': len([c for c in active_complaints if c.get('priority') == 'high'])
+        }
+        
+        return render_template_string(DASH_HTML, 
+            active_complaints=active_complaints,
+            resolved_complaints=resolved_complaints,
+            active_certs=certificates,
+            resolved_certs=[],
+            works=works,
+            announcements=announcements,
+            village=village,
+            username=username,
+            photo=photo,
+            mandal=MANDAL,
+            now=datetime.now().strftime("%d %b %Y, %H:%M"),
+            c=counts)
+    except Exception as e:
+        print(f"Dashboard error: {e}")
+        return f"Dashboard error: {str(e)}", 500
 
 @app.route("/complaint/<cid>")
 def view_complaint(cid):
@@ -688,24 +746,27 @@ def view_complaint(cid):
         conn, db_type = get_db()
         cur = conn.cursor()
         cur.execute("SELECT * FROM complaints WHERE id = ?", (cid,))
-        complaint = cur.fetchone()
+        row = cur.fetchone()
         conn.close()
         
-        if not complaint:
+        if not row:
             return "Complaint not found", 404
         
-        # Convert to dict
-        if isinstance(complaint, dict):
-            complaint_dict = complaint
+        if isinstance(row, dict):
+            complaint_dict = row
         else:
-            complaint_dict = {key: complaint[key] for key in complaint.keys()}
-        
-        # Ensure all fields exist
-        fields = ['id', 'name', 'phone', 'category', 'description', 'location', 
-                  'priority', 'status', 'filed_at', 'maps_link', 'location_lat', 'location_lng']
-        for field in fields:
-            if field not in complaint_dict:
-                complaint_dict[field] = ''
+            complaint_dict = {
+                'id': row[0] if len(row) > 0 else '',
+                'name': row[1] if len(row) > 1 else '',
+                'phone': row[2] if len(row) > 2 else '',
+                'category': row[3] if len(row) > 3 else '',
+                'description': row[4] if len(row) > 4 else '',
+                'location': row[5] if len(row) > 5 else '',
+                'priority': row[6] if len(row) > 6 else 'medium',
+                'status': row[7] if len(row) > 7 else 'pending',
+                'filed_at': row[8] if len(row) > 8 else '',
+                'maps_link': row[13] if len(row) > 13 else '',
+            }
         
         return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
     except Exception as e:
@@ -744,7 +805,7 @@ def send_reply_route():
     result = cur.fetchone()
     conn.close()
     if result:
-        citizen_number = result["phone"] if isinstance(result, dict) else result[0]
+        citizen_number = result[0] if not isinstance(result, dict) else result.get('phone')
         send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {session.get('sarpanch_village', '')}")
     return redirect(url_for('view_complaint', cid=ticket_id))
 
@@ -799,7 +860,6 @@ def list_sarpanchs():
 def add_sarpanch():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
     error = None
     if request.method == "POST":
         username = request.form.get("username")
@@ -880,7 +940,7 @@ button{background:#4a7c59;color:white;border:none;padding:10px 20px;border-radiu
 <div class="container">
 <form method="POST" enctype="multipart/form-data">
 <div style="text-align:center">
-{% if user.photo %}
+{% if user and user.photo %}
 <img src="{{ user.photo }}" class="photo-preview" alt="Profile Photo">
 {% else %}
 <div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center">No Photo</div>
@@ -889,19 +949,19 @@ button{background:#4a7c59;color:white;border:none;padding:10px 20px;border-radiu
 </div>
 <div class="field">
 <label class="label">Username</label>
-<input type="text" value="{{ user.username }}" disabled>
+<input type="text" value="{{ user.username if user else '' }}" disabled>
 </div>
 <div class="field">
 <label class="label">Village Name</label>
-<input type="text" value="{{ user.village_name }}" disabled>
+<input type="text" value="{{ user.village_name if user else '' }}" disabled>
 </div>
 <div class="field">
 <label class="label">Phone Number</label>
-<input type="tel" name="phone" value="{{ user.phone or '' }}">
+<input type="tel" name="phone" value="{{ user.phone if user else '' }}">
 </div>
 <div class="field">
 <label class="label">Email</label>
-<input type="email" name="email" value="{{ user.email or '' }}">
+<input type="email" name="email" value="{{ user.email if user else '' }}">
 </div>
 <button type="submit">Update Profile</button>
 </form>
@@ -1047,133 +1107,51 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .nav-links a{color:white;text-decoration:none}
 </style></head><body>
 <div class="tb">
-  <div class="tl">
-    {% if photo %}
-    <img src="{{ photo }}" class="avatar" alt="Profile">
-    {% else %}
-    <div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>
-    {% endif %}
-    <div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
-  </div>
-  <div class="nav-links">
-    <a href="/profile">Profile</a>
-    <a href="/sarpanchs">Sarpanchs</a>
-    <a href="/logout">Logout</a>
-  </div>
+<div class="tl">
+{% if photo %}
+<img src="{{ photo }}" class="avatar" alt="Profile">
+{% else %}
+<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>
+{% endif %}
+<div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
+</div>
+<div class="nav-links">
+<a href="/profile">Profile</a>
+<a href="/sarpanchs">Sarpanchs</a>
+<a href="/logout">Logout</a>
+</div>
 </div>
 <div class="stats">
-  <div class="sc c1"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
-  <div class="sc c2"><div class="val">{{ c.cert }}</div><div class="lbl">Cert Requests</div></div>
-  <div class="sc c3"><div class="val">{{ c.res }}</div><div class="lbl">Resolved</div></div>
-  <div class="sc c4"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-  <div class="sc c5"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c1"><div class="val">{{ c.pc }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2"><div class="val">{{ c.cert }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c3"><div class="val">{{ c.res }}</div><div class="lbl">Resolved</div></div>
+<div class="sc c4"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
+<div class="sc c5"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
 </div>
-
-<!-- Active Complaints Section -->
 <div class="sec">
-  <div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
-  {% if active_complaints %}
-  <table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  {% for x in active_complaints %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td><strong>{{ x.id }}</strong></td>
-    <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.category }}</td>
-    <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td>
-    <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
-    <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
-    <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-    <td><div class="acts">
-      {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
-      {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
-      {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
-      <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
-      <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-    </div></td>
-  </tr>
-  {% endfor %}</tbody></table>
-  {% else %}<div class="empty">No active complaints!</div>{% endif %}
+<div class="sh">📋 Active Complaints</div>
+{% if active_complaints %}
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+{% for x in active_complaints %}
+<tr><td><strong>{{ x.id }}</strong></td><td>{{ x.name }}</td><td>{{ x.category }}</td><td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td><td>{{ x.priority|upper }}</td><td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+<td><div class="acts">
+{% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
+{% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
+{% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
+<a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
+</div></td></tr>
+{% endfor %}</tbody></table>
+{% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
-
-<!-- Active Certificate Requests -->
 <div class="sec">
-  <div class="sh">📋 Active Certificate Requests <span>Pending + Processing</span></div>
-  {% if active_certs %}
-  <table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  {% for x in active_certs %}
-  <tr>
-    <td>{{ loop.index }}</td>
-    <td><strong>{{ x.id }}</strong></td>
-    <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
-    <td>{{ x.type }}</td>
-    <td>{{ x.purpose }}</td>
-    <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
-    <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-    <td><div class="acts">
-      {% if x.status=='pending' %}<a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a>{% endif %}
-      {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
-      <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
-    </div></td>
-  </tr>
-  {% endfor %}</tbody></table>
-  {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
-</div>
-
-<!-- Development Works -->
-<div class="sec">
-  <div class="sh">🛠️ Development Works</div>
-  {% if works %}
-  <table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
-  {% for w in works %}
-  <tr>
-    <td><strong>{{ w.id }}</strong></td>
-    <td>{{ w.title }}</td>
-    <td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
-    <td style="font-size:11px;color:#888">{{ w.updated }}</td>
-    <td><div class="acts">
-      {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
-      {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
-      <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-    </div></td>
-  </tr>
-  {% endfor %}</tbody></table>
-  {% else %}<div class="empty">No works added.</div>{% endif %}
-  <form method="post" action="/addwork" class="wf">
-    <input type="text" name="title" placeholder="Add new work" required>
-    <button type="submit">+ Add Work</button>
-  </form>
-</div>
-
-<!-- Announcements -->
-<div class="sec">
-  <div class="sh">📢 Announcements</div>
-  {% if announcements %}
-  <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
-  {% for a in announcements %}
-  <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
-  {% endfor %}</tbody></table>
-  {% else %}<div class="empty">No announcements.</div>{% endif %}
-  <form method="post" action="/announce" class="af">
-    <input type="text" name="title" placeholder="Title" required>
-    <input type="text" name="body" placeholder="Message..." required>
-    <button type="submit">Post Announcement</button>
-  </form>
-</div>
-
-<!-- Resolved/Closed Items -->
-<div class="sec">
-  <div class="sh">✅ Resolved / Closed Items</div>
-  {% if resolved_complaints or resolved_certs %}
-  <table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>
-  {% for x in resolved_complaints %}
-  <tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
-  {% endfor %}
-  {% for x in resolved_certs %}
-  <tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td>-</td></tr>
-  {% endfor %}
-  </tbody></table>
-  {% else %}<div class="empty">No resolved items.</div>{% endif %}
+<div class="sh">✅ Resolved Complaints</div>
+{% if resolved_complaints %}
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
+{% for x in resolved_complaints %}
+<tr><td><strong>{{ x.id }}</strong></td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+{% endfor %}</tbody></table>
+{% else %}<div class="empty">No resolved complaints.</div>{% endif %}
 </div>
 </body></html>
 """
@@ -1197,7 +1175,7 @@ hr{margin:20px 0}
 <body>
 <div class="header"><h2>Complaint Details</h2></div>
 <div class="container">
-<a href="/dashboard" class="back-btn">← Back to Dashboard</a>
+<a href="/dashboard" class="back-btn">← Back</a>
 <div class="field"><span class="label">Ticket ID:</span> {{ complaint.get('id', 'N/A') }}</div>
 <div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
 <div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
@@ -1207,35 +1185,28 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
 <div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
 {% if complaint.get('maps_link') %}
-<div class="field">
-    <span class="label">🗺️ Map Location:</span>
-    <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a>
-    <br><small>Lat: {{ complaint.get('location_lat', 'N/A') }}, Lng: {{ complaint.get('location_lng', 'N/A') }}</small>
-</div>
+<div class="field"><span class="label">🗺️ Map:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">View on Google Maps</a></div>
 {% endif %}
-<div class="field">
-    <span class="label">Complaint:</span><br>
-    <div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.get('description', 'No description') }}</div>
-</div>
+<div class="field"><span class="label">Complaint:</span><br><div style="background:#f8f9fa; padding:15px; border-radius:5px">{{ complaint.get('description', 'No description') }}</div></div>
 <hr>
 <h3>Update Status</h3>
 <form method="POST" action="/update_status">
 <input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
 <select name="status">
-    <option value="pending" {% if complaint.get('status')=='pending' %}selected{% endif %}>Pending</option>
-    <option value="in_review" {% if complaint.get('status')=='in_review' %}selected{% endif %}>In Review</option>
-    <option value="in_progress" {% if complaint.get('status')=='in_progress' %}selected{% endif %}>In Progress</option>
-    <option value="resolved" {% if complaint.get('status')=='resolved' %}selected{% endif %}>Resolved</option>
-    <option value="rejected" {% if complaint.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
+<option value="pending">Pending</option>
+<option value="in_review">In Review</option>
+<option value="in_progress">In Progress</option>
+<option value="resolved">Resolved</option>
+<option value="rejected">Rejected</option>
 </select>
-<textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
-<button type="submit">Update Status</button>
+<textarea name="notes" placeholder="Notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
+<button type="submit">Update</button>
 </form>
 <hr>
-<h3>Send Reply to Citizen</h3>
+<h3>Send Reply</h3>
 <form method="POST" action="/send_reply">
 <input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
+<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply..."></textarea>
 <button type="submit">Send Reply</button>
 </form>
 </div>
