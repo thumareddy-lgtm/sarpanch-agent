@@ -202,7 +202,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
 def get_menu(ctx): return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── MAIN BOT REPLY FUNCTION (WITH FIXED c_pri) ───────────────
+# ── FIXED bot_reply FUNCTION ─────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -294,7 +294,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "c_pri"
         return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
     
-    # ── FIXED c_pri STATE (Saves complaint after urgency) ──
+    # FIXED c_pri STATE - Saves complaint after urgency
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
         
@@ -305,7 +305,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
-        village = ctx.get("village", ctx.get("location_text", "Unknown"))
+        village = ctx.get("village", ctx.get("location_text", "Not provided"))
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
         
@@ -336,6 +336,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         
         reply += "\n\nType *menu* for main menu"
         
+        # CRITICAL: Reset session to idle
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
     
     # CERTIFICATE FLOW
@@ -346,10 +347,14 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "📄 Applicant full name:", {"state": "cert_name", "cert_type": ctx["cert_type"], "lang": lang}
     
     if state == "cert_name":
+        if len(msg) < 2:
+            return "Please enter valid name:", ctx
         ctx["cert_name"] = msg.title()
         return "👨 Father's/Husband's name:", {"state": "cert_father", "cert_type": ctx["cert_type"], "cert_name": ctx["cert_name"], "lang": lang}
     
     if state == "cert_father":
+        if len(msg) < 2:
+            return "Please enter valid name:", ctx
         ctx["cert_father"] = msg.title()
         return "📱 Mobile number:", {"state": "cert_phone", "cert_type": ctx["cert_type"], "cert_name": ctx["cert_name"], "cert_father": ctx["cert_father"], "lang": lang}
     
@@ -360,6 +365,8 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "📝 Purpose (e.g., Bank loan):", {"state": "cert_purpose", "cert_type": ctx["cert_type"], "cert_name": ctx["cert_name"], "cert_father": ctx["cert_father"], "cert_phone": ctx["cert_phone"], "lang": lang}
     
     if state == "cert_purpose":
+        if len(msg) < 3:
+            return "Please provide purpose:", ctx
         ref = new_id("CERT-")
         rec = {
             "id": ref, "type": ctx["cert_type"], "name": ctx["cert_name"],
@@ -371,15 +378,18 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     # TRACK STATUS
     if state == "track_id":
+        if len(msg) < 5:
+            return "Please enter valid Reference ID (e.g., CMP-XXXXX):", ctx
         ref = msg.upper().strip()
         rec = get_record(ref)
         if not rec:
-            return f"❌ ID {ref} not found.\nType menu", {"state": "idle", "lang": lang}
+            return f"❌ ID {ref} not found.\n\nType menu", {"state": "idle", "lang": lang}
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
-            return f"🔍 Complaint Status\n📋 ID: {ref}\nStatus: {st}\nFiled: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
-        return f"🔍 Certificate Status\n📋 ID: {ref}\nStatus: {st}\nFiled: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
+            return f"🔍 Complaint Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
+        return f"🔍 Certificate Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
     
+    # Fallback - show menu
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
 # ── WhatsApp Webhook ────────────────────────────────────────
@@ -571,7 +581,7 @@ def announce():
         insert_announcement(t, b)
     return redirect("/sarpanch")
 
-# ── ORIGINAL DASHBOARD HTML (with time, stats, all features) ─
+# ── HTML TEMPLATES ────────────────────────────────────────────
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="20">
@@ -613,9 +623,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .map-link{color:#1a73e8;text-decoration:none;font-weight:500}
 </style></head><body>
 <div class="tb">
-  <div class="tl">
-    <div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ sarpanch }} · {{ mandal }}</div></div>
-  </div>
+  <div class="tl"><div><h1>{{ village }} — Sarpanch Dashboard</h1><div class="ts">{{ sarpanch }} · {{ mandal }}</div></div></div>
   <div style="font-size:12px;opacity:.8">Auto-refresh 20s · {{ now }}</div>
 </div>
 <div class="stats">
