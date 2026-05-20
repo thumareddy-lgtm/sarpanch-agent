@@ -30,10 +30,10 @@ whatsapp_sessions = {}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── FORCE ADD VILLAGE COLUMN ON STARTUP (GUARANTEED) ─────────
+# ── FORCE ADD VILLAGE COLUMN ON STARTUP ──────────────────────
 def force_add_village_column():
-    """Force add village column to complaints table - runs before anything else"""
-    print("🔧 Force adding village column if missing...")
+    """Force add village column to complaints table"""
+    print("🔧 Checking village column...")
     try:
         if DATABASE_URL:
             import psycopg2
@@ -42,21 +42,20 @@ def force_add_village_column():
             cur.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS village TEXT DEFAULT ''")
             conn.commit()
             conn.close()
-            print("✅ Village column verified/added in PostgreSQL")
+            print("✅ Village column verified")
         else:
             conn = sqlite3.connect("sarpanch.db")
             cur = conn.cursor()
             try:
                 cur.execute("ALTER TABLE complaints ADD COLUMN village TEXT DEFAULT ''")
-                print("✅ Village column added in SQLite")
+                print("✅ Village column added")
             except:
-                print("✅ Village column already exists in SQLite")
+                print("✅ Village column already exists")
             conn.commit()
             conn.close()
     except Exception as e:
-        print(f"⚠️ Could not add village column: {e}")
+        print(f"⚠️ Village column: {e}")
 
-# Run this IMMEDIATELY
 force_add_village_column()
 
 # ── Helper Functions ─────────────────────────────────────────
@@ -93,7 +92,6 @@ def init_db():
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
     
-    # Create complaints table with village column
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS complaints (
             id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, 
@@ -130,7 +128,6 @@ def init_db():
         )
     """)
     
-    # Insert default sarpanch
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -353,7 +350,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx): 
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION ───────────────────────────────────────
+# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -427,24 +424,42 @@ def bot_reply(user_msg, ctx, media_info=None):
         ctx["state"] = "waiting_for_location"
         return "📍 Share your location (📎 → Location) or type village name:", ctx
     
+    # FIXED: Better village detection from text
     if state == "waiting_for_location":
         detected_village = detect_village_from_text(msg)
         if detected_village:
             ctx["village"] = detected_village
+            print(f"✅ Village detected from text: {detected_village}")
         elif not ctx.get("location_lat"):
             ctx["location_text"] = msg
+            print(f"📍 Location text saved: {msg}")
+        else:
+            print(f"📍 Village from GPS: {ctx.get('village')}")
+        
         ctx["state"] = "c_pri"
         return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
     
+    # FIXED: c_pri with proper village handling
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
+        print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
+        
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
             return "⚡ Please reply with:\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
         
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
-        village = ctx.get("village", ctx.get("location_text", "Not provided"))
+        
+        # Determine village - priority: detected village > typed text > GPS > default
+        village = ctx.get("village")
+        if not village or village == "Unknown":
+            village = ctx.get("location_text", "")
+        if not village or village == "":
+            village = VILLAGE_NAME
+        
+        print(f"✅ Final village for complaint: {village}")
+        
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
         
@@ -469,7 +484,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         print(f"🔍 Saving complaint: {rec}")
         insert_complaint(rec)
         
-        reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
+        reply = f"✅ *Complaint Registered!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location/Village: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
         if maps_link:
             reply += f"\n🗺️ Map: {maps_link}"
         reply += "\n\nType *menu* for main menu"
@@ -520,7 +535,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"❌ ID {ref} not found.\n\nType menu", {"state": "idle", "lang": lang}
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
-            return f"🔍 Complaint Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
+            return f"🔍 Complaint Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location/Village: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
         return f"🔍 Certificate Status\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType menu", {"state": "idle", "lang": lang}
     
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
@@ -706,18 +721,21 @@ def dashboard():
             if isinstance(x, dict):
                 complaint_village = x.get('village', '')
                 status = x.get('status', 'pending')
+                # Create display location - show village name prominently
+                display_location = x.get('village', '') or x.get('location', 'Not specified')
                 c = {
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': x.get('description', ''),
-                    'location': x.get('location', ''), 'priority': x.get('priority', 'medium'),
+                    'location': display_location, 'priority': x.get('priority', 'medium'),
                     'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', '')
                 }
             else:
                 complaint_village = x[17] if len(x) > 17 else ''
                 status = x[7] if len(x) > 7 else 'pending'
+                display_location = complaint_village or (x[5] if len(x) > 5 else 'Not specified')
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
-                    'description': x[4], 'location': x[5], 'priority': x[6],
+                    'description': x[4], 'location': display_location, 'priority': x[6],
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
             
@@ -812,16 +830,12 @@ def view_complaint(cid):
             complaint_dict = row
         else:
             complaint_dict = {
-                'id': row[0] if len(row) > 0 else '',
-                'name': row[1] if len(row) > 1 else '',
-                'phone': row[2] if len(row) > 2 else '',
-                'category': row[3] if len(row) > 3 else '',
-                'description': row[4] if len(row) > 4 else '',
-                'location': row[5] if len(row) > 5 else '',
-                'priority': row[6] if len(row) > 6 else 'medium',
-                'status': row[7] if len(row) > 7 else 'pending',
-                'filed_at': row[8] if len(row) > 8 else '',
+                'id': row[0], 'name': row[1], 'phone': row[2], 'category': row[3],
+                'description': row[4], 'location': row[5] or row[17] if len(row) > 17 else '',
+                'priority': row[6], 'status': row[7], 'filed_at': row[8],
                 'maps_link': row[13] if len(row) > 13 else '',
+                'location_lat': row[11] if len(row) > 11 else '',
+                'location_lng': row[12] if len(row) > 12 else ''
             }
         
         return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
@@ -1192,7 +1206,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
 {% if active_complaints %}
 <table>
-<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location/Village</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in active_complaints %}
 <tr>
@@ -1200,7 +1214,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <td><strong>{{ x.id }}</strong></td>
 <td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
 <td>{{ x.category }}</td>
-<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td>
+<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
@@ -1339,7 +1353,7 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
 <div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
 <div class="field"><span class="label">Category:</span> {{ complaint.get('category', 'General') }}</div>
-<div class="field"><span class="label">Location:</span> {{ complaint.get('location', 'Not provided') }}</div>
+<div class="field"><span class="label">Location/Village:</span> {{ complaint.get('location', 'Not provided') }}</div>
 <div class="field"><span class="label">Priority:</span> {{ complaint.get('priority', 'medium')|upper }}</div>
 <div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
 <div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
