@@ -30,7 +30,7 @@ whatsapp_sessions = {}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# ── HELPER FUNCTIONS ─────────────────────────────────────────
+# ── Helper Functions ─────────────────────────────────────────
 def now_str(): 
     return datetime.now().strftime("%d-%b-%Y %H:%M")
 
@@ -56,201 +56,71 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
 
-# ── FORCE CREATE TABLES ON STARTUP ───────────────────────────
-def force_create_tables():
-    print("🔧 Creating tables if not exist...")
-    try:
-        if DATABASE_URL:
-            import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
-            cur = conn.cursor()
-            
-            # Create complaints table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS complaints (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    phone TEXT,
-                    category TEXT,
-                    description TEXT,
-                    location TEXT,
-                    priority TEXT DEFAULT 'medium',
-                    status TEXT DEFAULT 'pending',
-                    filed_at TEXT,
-                    updated TEXT,
-                    notes TEXT DEFAULT '',
-                    location_lat DOUBLE PRECISION,
-                    location_lng DOUBLE PRECISION,
-                    location_address TEXT,
-                    maps_link TEXT,
-                    media_type TEXT,
-                    media_url TEXT,
-                    village TEXT DEFAULT ''
-                )
-            """)
-            
-            # Create certificates table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS certificates (
-                    id TEXT PRIMARY KEY,
-                    type TEXT,
-                    name TEXT,
-                    father TEXT,
-                    phone TEXT,
-                    purpose TEXT,
-                    status TEXT DEFAULT 'pending',
-                    filed_at TEXT,
-                    updated TEXT,
-                    notes TEXT DEFAULT ''
-                )
-            """)
-            
-            # Create works table (using 'updated' column name)
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS works (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    status TEXT DEFAULT 'pending',
-                    updated TEXT
-                )
-            """)
-            
-            # Create announcements table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS announcements (
-                    id SERIAL PRIMARY KEY,
-                    title TEXT,
-                    body TEXT,
-                    date TEXT
-                )
-            """)
-            
-            # Create sarpanch_users table
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sarpanch_users (
-                    id SERIAL PRIMARY KEY,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
-                    village_name TEXT NOT NULL,
-                    phone TEXT,
-                    email TEXT,
-                    photo TEXT,
-                    created_at TEXT
-                )
-            """)
-            
-            # Insert default sarpanch if not exists
-            cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
-            if not cur.fetchone():
-                default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
-                cur.execute("""
-                    INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
-            
-            conn.commit()
-            conn.close()
-            print("✅ PostgreSQL tables created!")
-        else:
-            conn = sqlite3.connect("sarpanch.db")
-            cur = conn.cursor()
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS complaints (
-                    id TEXT PRIMARY KEY,
-                    name TEXT,
-                    phone TEXT,
-                    category TEXT,
-                    description TEXT,
-                    location TEXT,
-                    priority TEXT DEFAULT 'medium',
-                    status TEXT DEFAULT 'pending',
-                    filed_at TEXT,
-                    updated TEXT,
-                    notes TEXT DEFAULT '',
-                    location_lat REAL,
-                    location_lng REAL,
-                    location_address TEXT,
-                    maps_link TEXT,
-                    media_type TEXT,
-                    media_url TEXT,
-                    village TEXT DEFAULT ''
-                )
-            """)
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS certificates (
-                    id TEXT PRIMARY KEY,
-                    type TEXT,
-                    name TEXT,
-                    father TEXT,
-                    phone TEXT,
-                    purpose TEXT,
-                    status TEXT DEFAULT 'pending',
-                    filed_at TEXT,
-                    updated TEXT,
-                    notes TEXT DEFAULT ''
-                )
-            """)
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS works (
-                    id TEXT PRIMARY KEY,
-                    title TEXT,
-                    status TEXT DEFAULT 'pending',
-                    updated TEXT
-                )
-            """)
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS announcements (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT,
-                    body TEXT,
-                    date TEXT
-                )
-            """)
-            
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS sarpanch_users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE,
-                    password TEXT,
-                    village_name TEXT,
-                    phone TEXT,
-                    email TEXT,
-                    photo TEXT,
-                    created_at TEXT
-                )
-            """)
-            
-            cur.execute("SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
-            if not cur.fetchone():
-                default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
-                cur.execute("""
-                    INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
-            
-            conn.commit()
-            conn.close()
-            print("✅ SQLite tables created!")
-    except Exception as e:
-        print(f"❌ Error creating tables: {e}")
-
-# Run table creation immediately
-force_create_tables()
-
-# ── DATABASE FUNCTIONS ───────────────────────────────────────
 def init_db():
-    print("Database already initialized by force_create_tables()")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
+    ai = "SERIAL" if db_type == "pg" else "INTEGER"
+    autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
+    
+    # Create complaints table with village column
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS complaints (
+            id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, 
+            description TEXT, location TEXT, priority TEXT DEFAULT 'medium', 
+            status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '',
+            location_lat REAL, location_lng REAL, location_address TEXT, 
+            maps_link TEXT, media_type TEXT, media_url TEXT, village TEXT DEFAULT ''
+        )
+    """)
+    
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS certificates (
+            id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, 
+            purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT ''
+        )
+    """)
+    
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS works (
+            id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT
+        )
+    """)
+    
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS announcements (
+            id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT
+        )
+    """)
+    
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS sarpanch_users (
+            id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT,
+            village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT
+        )
+    """)
+    
+    # Insert default sarpanch
+    default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
+    cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
+    if not cur.fetchone():
+        cur.execute(f"""
+            INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
+            VALUES ({p},{p},{p},{p},{p},{p})
+        """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
+    
+    conn.commit()
+    conn.close()
+    print(f" Database ready ({db_type})")
 
 def insert_complaint(c):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
-        INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,updated,notes,
+        INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,
         location_lat,location_lng,location_address,maps_link,media_type,media_url,village) 
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
@@ -264,8 +134,9 @@ def insert_certificate(c):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
-        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,updated,notes) 
+        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes) 
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
@@ -286,14 +157,16 @@ def update_status(table, ref_id, status):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    cur.execute(f"UPDATE {table} SET status = {p}, updated = {p} WHERE id = {p}", (status, now_str(), ref_id))
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"UPDATE {table} SET status = {p}, {u} = {p} WHERE id = {p}", (status, now_str(), ref_id))
     conn.commit()
     conn.close()
 
 def all_complaints():
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM complaints ORDER BY filed_at DESC")
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"SELECT *,{u} as updated FROM complaints ORDER BY filed_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -301,7 +174,8 @@ def all_complaints():
 def all_certs():
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM certificates ORDER BY filed_at DESC")
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"SELECT *,{u} as updated FROM certificates ORDER BY filed_at DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -309,7 +183,8 @@ def all_certs():
 def all_works():
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM works ORDER BY updated DESC")
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"SELECT *,{u} as updated FROM works ORDER BY {u} DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -335,7 +210,8 @@ def insert_work(title):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    cur.execute(f"INSERT INTO works (id,title,status,updated) VALUES ({p},{p},{p},{p})", 
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})", 
                 (new_id("WORK-"), title, "pending", now_str()))
     conn.commit()
     conn.close()
@@ -373,7 +249,7 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
-# ── HELPER FUNCTIONS ─────────────────────────────────────────
+# ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
@@ -395,7 +271,7 @@ def detect_village_from_text(text):
             return village.title()
     return None
 
-# ── WHATSAPP API FUNCTION ────────────────────────────────────
+# ── WhatsApp API Function ────────────────────────────────────
 def send_whatsapp_message(to_number, message):
     if not META_TOKEN:
         print(" META_TOKEN not set")
@@ -424,7 +300,7 @@ def send_whatsapp_message(to_number, message):
         print(f" Error: {e}")
         return False
 
-# ── MENUS AND CONSTANTS ──────────────────────────────────────
+# ── Menus and Constants ──────────────────────────────────────
 MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
     "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
     "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
@@ -794,6 +670,7 @@ def dashboard():
         wo = all_works()
         an = all_announcements()
         
+        # Filter complaints for this village
         active_complaints = []
         resolved_complaints = []
         
@@ -801,7 +678,12 @@ def dashboard():
             if isinstance(x, dict):
                 complaint_village = x.get('village', '')
                 status = x.get('status', 'pending')
-                c = x
+                c = {
+                    'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
+                    'category': x.get('category', ''), 'description': x.get('description', ''),
+                    'location': x.get('location', ''), 'priority': x.get('priority', 'medium'),
+                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', '')
+                }
             else:
                 complaint_village = x[17] if len(x) > 17 else ''
                 status = x[7] if len(x) > 7 else 'pending'
@@ -819,28 +701,42 @@ def dashboard():
             else:
                 resolved_complaints.append(c)
         
+        # Process certificates
         certificates = []
         for x in ce:
             if isinstance(x, dict):
-                certificates.append(x)
+                certificates.append({
+                    'id': x.get('id', ''), 'type': x.get('type', ''), 'name': x.get('name', ''),
+                    'status': x.get('status', 'pending'), 'filed_at': x.get('filed_at', '')
+                })
             else:
                 certificates.append({
-                    'id': x[0], 'type': x[1], 'name': x[2], 'status': x[6], 'filed_at': x[7]
+                    'id': x[0], 'type': x[1], 'name': x[2],
+                    'status': x[6] if len(x) > 6 else 'pending', 'filed_at': x[7] if len(x) > 7 else ''
                 })
         
+        # Process works
         works = []
         for w in wo:
             if isinstance(w, dict):
-                works.append(w)
+                works.append({
+                    'id': w.get('id', ''), 'title': w.get('title', ''), 
+                    'status': w.get('status', 'pending'), 'updated': w.get('updated', '')
+                })
             else:
                 works.append({
-                    'id': w[0], 'title': w[1], 'status': w[2], 'updated': w[3] if len(w) > 3 else ''
+                    'id': w[0], 'title': w[1], 'status': w[2] if len(w) > 2 else 'pending',
+                    'updated': w[3] if len(w) > 3 else ''
                 })
         
+        # Process announcements
         announcements = []
         for a in an:
             if isinstance(a, dict):
-                announcements.append(a)
+                announcements.append({
+                    'id': a.get('id', ''), 'title': a.get('title', ''), 
+                    'body': a.get('body', ''), 'date': a.get('date', '')
+                })
             else:
                 announcements.append({
                     'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3] if len(a) > 3 else ''
@@ -850,7 +746,7 @@ def dashboard():
             'pc': len(active_complaints),
             'cert': len(certificates),
             'res': len(resolved_complaints),
-            'works': len(works),
+            'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
             'hi': len([c for c in active_complaints if c.get('priority') == 'high'])
         }
         
@@ -1265,30 +1161,112 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sc c4"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
 <div class="sc c5"><div class="val">{{ c.hi }}</div><div class="lbl">High Priority</div></div>
 </div>
+
+<!-- Active Complaints Section -->
 <div class="sec">
-<div class="sh">📋 Active Complaints</div>
+<div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
 {% if active_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
 {% for x in active_complaints %}
-<tr><td><strong>{{ x.id }}</strong></td><td>{{ x.name }}</td><td>{{ x.category }}</td><td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td><td>{{ x.priority|upper }}</td><td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+<tr>
+<td>{{ loop.index }}</td>
+<td><strong>{{ x.id }}</strong></td>
+<td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
+<td>{{ x.category }}</td>
+<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 Map</a>{% else %}{{ x.location }}{% endif %}</td>
+<td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
+<td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
+<td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
 <td><div class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</div></td></tr>
+</div></td>
+</tr>
 {% endfor %}</tbody></table>
 {% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
+
+<!-- Active Certificate Requests -->
 <div class="sec">
-<div class="sh">✅ Resolved Complaints</div>
-{% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
-{% for x in resolved_complaints %}
-<tr><td><strong>{{ x.id }}</strong></td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+<div class="sh">📋 Active Certificate Requests <span>Pending + Processing</span></div>
+{% if active_certs %}
+<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+{% for x in active_certs %}
+<tr>
+<td>{{ loop.index }}</td>
+<td><strong>{{ x.id }}</strong></td>
+<td>{{ x.name }}<br><small style="color:#888">{{ x.phone }}</small></td>
+<td>{{ x.type }}</td>
+<td>{{ x.purpose }}</td>
+<td style="font-size:11px;color:#888">{{ x.filed_at }}</td>
+<td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><div class="acts">
+{% if x.status=='pending' %}<a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a>{% endif %}
+{% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
+<a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
+</div></td>
+</tr>
 {% endfor %}</tbody></table>
-{% else %}<div class="empty">No resolved complaints.</div>{% endif %}
+{% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
+</div>
+
+<!-- Development Works -->
+<div class="sec">
+<div class="sh">🛠️ Development Works</div>
+{% if works %}
+<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+{% for w in works %}
+<tr>
+<td><strong>{{ w.id }}</strong></td>
+<td>{{ w.title }}</td>
+<td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td style="font-size:11px;color:#888">{{ w.updated }}</td>
+<td><div class="acts">
+{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
+{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
+</div></td>
+</tr>
+{% endfor %}</tbody></table>
+{% else %}<div class="empty">No works added.</div>{% endif %}
+<form method="post" action="/addwork" class="wf">
+<input type="text" name="title" placeholder="Add new work" required>
+<button type="submit">+ Add Work</button>
+</form>
+</div>
+
+<!-- Announcements -->
+<div class="sec">
+<div class="sh">📢 Announcements</div>
+{% if announcements %}
+<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+{% for a in announcements %}
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+{% endfor %}</tbody></table>
+{% else %}<div class="empty">No announcements.</div>{% endif %}
+<form method="post" action="/announce" class="af">
+<input type="text" name="title" placeholder="Title" required>
+<input type="text" name="body" placeholder="Message..." required>
+<button type="submit">Post Announcement</button>
+</form>
+</div>
+
+<!-- Resolved/Closed Items -->
+<div class="sec">
+<div class="sh">✅ Resolved / Closed Items</div>
+{% if resolved_complaints or resolved_certs %}
+<table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>
+{% for x in resolved_complaints %}
+<tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+{% endfor %}
+{% for x in resolved_certs %}
+<tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td>-</td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 </body></html>
 """
@@ -1312,7 +1290,7 @@ hr{margin:20px 0}
 <body>
 <div class="header"><h2>Complaint Details</h2></div>
 <div class="container">
-<a href="/dashboard" class="back-btn">← Back</a>
+<a href="/dashboard" class="back-btn">← Back to Dashboard</a>
 <div class="field"><span class="label">Ticket ID:</span> {{ complaint.get('id', 'N/A') }}</div>
 <div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
 <div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
@@ -1322,28 +1300,28 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
 <div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
 {% if complaint.get('maps_link') %}
-<div class="field"><span class="label">🗺️ Map:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">View on Google Maps</a></div>
+<div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a><br><small>Coordinates: {{ complaint.get('location_lat', 'N/A') }}, {{ complaint.get('location_lng', 'N/A') }}</small></div>
 {% endif %}
-<div class="field"><span class="label">Complaint:</span><br><div style="background:#f8f9fa; padding:15px; border-radius:5px">{{ complaint.get('description', 'No description') }}</div></div>
+<div class="field"><span class="label">Complaint:</span><br><div style="background:#f8f9fa; padding:15px; border-radius:5px; margin-top:5px">{{ complaint.get('description', 'No description') }}</div></div>
 <hr>
 <h3>Update Status</h3>
 <form method="POST" action="/update_status">
 <input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
 <select name="status">
-<option value="pending">Pending</option>
-<option value="in_review">In Review</option>
-<option value="in_progress">In Progress</option>
-<option value="resolved">Resolved</option>
-<option value="rejected">Rejected</option>
+<option value="pending" {% if complaint.get('status')=='pending' %}selected{% endif %}>Pending</option>
+<option value="in_review" {% if complaint.get('status')=='in_review' %}selected{% endif %}>In Review</option>
+<option value="in_progress" {% if complaint.get('status')=='in_progress' %}selected{% endif %}>In Progress</option>
+<option value="resolved" {% if complaint.get('status')=='resolved' %}selected{% endif %}>Resolved</option>
+<option value="rejected" {% if complaint.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
 </select>
-<textarea name="notes" placeholder="Notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
-<button type="submit">Update</button>
+<textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%; margin:10px 0"></textarea>
+<button type="submit">Update Status</button>
 </form>
 <hr>
-<h3>Send Reply</h3>
+<h3>Send Reply to Citizen</h3>
 <form method="POST" action="/send_reply">
 <input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply..."></textarea>
+<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
 <button type="submit">Send Reply</button>
 </form>
 </div>
