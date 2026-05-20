@@ -113,6 +113,20 @@ def init_db():
     conn.commit()
     conn.close()
     print(f" Database ready ({db_type})")
+    
+    # ── FIX: Add village column if missing (for existing databases) ──
+    try:
+        conn2, db_type2 = get_db()
+        cur2 = conn2.cursor()
+        if db_type2 == 'pg':
+            cur2.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS village TEXT DEFAULT ''")
+        else:
+            cur2.execute("ALTER TABLE complaints ADD COLUMN village TEXT DEFAULT ''")
+        conn2.commit()
+        conn2.close()
+        print("✅ Village column verified/added")
+    except Exception as e:
+        print(f"Note: Village column check: {e}")
 
 def insert_complaint(c):
     conn, db_type = get_db()
@@ -670,7 +684,6 @@ def dashboard():
         wo = all_works()
         an = all_announcements()
         
-        # Filter complaints for this village
         active_complaints = []
         resolved_complaints = []
         
@@ -701,7 +714,6 @@ def dashboard():
             else:
                 resolved_complaints.append(c)
         
-        # Process certificates
         certificates = []
         for x in ce:
             if isinstance(x, dict):
@@ -715,7 +727,6 @@ def dashboard():
                     'status': x[6] if len(x) > 6 else 'pending', 'filed_at': x[7] if len(x) > 7 else ''
                 })
         
-        # Process works
         works = []
         for w in wo:
             if isinstance(w, dict):
@@ -729,7 +740,6 @@ def dashboard():
                     'updated': w[3] if len(w) > 3 else ''
                 })
         
-        # Process announcements
         announcements = []
         for a in an:
             if isinstance(a, dict):
@@ -1166,7 +1176,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
 <div class="sh">📋 Active Complaints <span>Pending + In Review + In Progress</span></div>
 {% if active_complaints %}
-<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+<table>
+<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Category</th><th>Location</th><th>Priority</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>
 {% for x in active_complaints %}
 <tr>
 <td>{{ loop.index }}</td>
@@ -1185,7 +1197,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
 </div></td>
 </tr>
-{% endfor %}</tbody></table>
+{% endfor %}
+</tbody>
+</table>
 {% else %}<div class="empty">No active complaints!</div>{% endif %}
 </div>
 
@@ -1193,7 +1207,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
 <div class="sh">📋 Active Certificate Requests <span>Pending + Processing</span></div>
 {% if active_certs %}
-<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+<table>
+<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>
 {% for x in active_certs %}
 <tr>
 <td>{{ loop.index }}</td>
@@ -1209,7 +1225,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
 </div></td>
 </tr>
-{% endfor %}</tbody></table>
+{% endfor %}
+</tbody>
+</table>
 {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
 </div>
 
@@ -1217,7 +1235,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<tbody>
 {% for w in works %}
 <tr>
 <td><strong>{{ w.id }}</strong></td>
@@ -1230,7 +1250,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
 </div></td>
 </tr>
-{% endfor %}</tbody></table>
+{% endfor %}
+</tbody>
+</table>
 {% else %}<div class="empty">No works added.</div>{% endif %}
 <form method="post" action="/addwork" class="wf">
 <input type="text" name="title" placeholder="Add new work" required>
@@ -1242,10 +1264,14 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+<table>
+<thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead>
+<tbody>
 {% for a in announcements %}
 <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
-{% endfor %}</tbody></table>
+{% endfor %}
+</tbody>
+</table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
 <form method="post" action="/announce" class="af">
 <input type="text" name="title" placeholder="Title" required>
@@ -1258,14 +1284,17 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints or resolved_certs %}
-<table><thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead><tbody>
+<table>
+<thead><tr><th>ID</th><th>Type</th><th>Name</th><th>Details</th><th>Status</th><th>Action</th></tr></thead>
+<tbody>
 {% for x in resolved_complaints %}
 <tr><td>{{ x.id }}</td><td>Complaint</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
 {% for x in resolved_certs %}
 <tr><td>{{ x.id }}</td><td>Certificate</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td>-</td></tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 </body></html>
