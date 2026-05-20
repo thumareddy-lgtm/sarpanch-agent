@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD - WITH PROBLEM COLUMN ──────────────────────────
+# ── DASHBOARD - WITH PROFILE PIC AT TOP ──────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -749,7 +749,6 @@ def dashboard():
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
             
-            # NO VILLAGE FILTER - Show all complaints regardless of village
             if status in ('pending', 'in_review', 'in_progress'):
                 active_complaints.append(c)
             else:
@@ -1081,12 +1080,12 @@ th{background:#f4f5f7}
 <tbody>
 {% for s in sarpanchs %}
 <tr>
-<td>{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td>{{ s.username }}</td>
-<td>{{ s.village_name }}</td>
-<td>{{ s.phone or '-' }}</td>
-<td>{{ s.email or '-' }}</td>
-<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
+<td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
+<td style="text-align:center">{{ s.username }}</td>
+<td style="text-align:center">{{ s.village_name }}</td>
+<td style="text-align:center">{{ s.phone or '-' }}</td>
+<td style="text-align:center">{{ s.email or '-' }}</td>
+<td style="text-align:center">{{ s.created_at[:16] if s.created_at else '-' }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1152,12 +1151,14 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
-.tb{background:var(--green);color:#fff;padding:0 24px;height:62px;display:flex;align-items:center;justify-content:space-between}
-.tl{display:flex;align-items:center;gap:14px}
-.avatar{width:320px;height:320px;object-fit:cover;border:2px solid rgba(255,255,255,.4)}
-.tb h1{font-size:15px;font-weight:700}
-.ts{font-size:11px;opacity:.75}
-.stats{display:flex;gap:12px;padding:18px 24px 0;flex-wrap:wrap}
+.tb{background:var(--green);color:#fff;padding:0 24px;height:auto;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.tl{display:flex;flex-direction:column;align-items:center;gap:10px;margin:20px 0}
+.avatar{width:320px;height:320px;object-fit:cover;border:3px solid rgba(255,255,255,.4);margin:0 auto}
+.tb h1{font-size:18px;font-weight:700;text-align:center}
+.ts{font-size:12px;opacity:.75;text-align:center}
+.nav-links{display:flex;gap:20px;margin-bottom:15px}
+.nav-links a{color:white;text-decoration:none;font-size:14px}
+.stats{display:flex;gap:12px;padding:18px 24px;flex-wrap:wrap}
 .sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:110px;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .sc .val{font-size:26px;font-weight:700}.sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
 .sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
@@ -1183,8 +1184,6 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 .af input,.wf input{flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px;font-family:inherit;font-size:13px;min-width:140px}
 .af button,.wf button{background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-weight:600}
 .map-link{color:#1a73e8;text-decoration:none;font-weight:500}
-.nav-links{display:flex;gap:15px}
-.nav-links a{color:white;text-decoration:none}
 </style></head><body>
 <div class="tb">
 <div class="tl">
