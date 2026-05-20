@@ -18,6 +18,52 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 whatsapp_sessions = {}
 
+# ── FORCE DATABASE FIX ON STARTUP ─────────────────────────────
+def force_fix_database():
+    """Add missing columns to complaints table - runs on every startup"""
+    print("🔧 Checking database columns...")
+    try:
+        if DATABASE_URL:
+            # PostgreSQL
+            import psycopg2, psycopg2.extras
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            columns = [
+                ('location_lat', 'DOUBLE PRECISION'),
+                ('location_lng', 'DOUBLE PRECISION'),
+                ('location_address', 'TEXT'),
+                ('maps_link', 'TEXT'),
+                ('media_type', 'TEXT'),
+                ('media_url', 'TEXT')
+            ]
+            for col, dtype in columns:
+                try:
+                    cur.execute(f"ALTER TABLE complaints ADD COLUMN IF NOT EXISTS {col} {dtype}")
+                    print(f"✅ Added column: {col}")
+                except Exception as e:
+                    print(f"⚠️ Column {col} may already exist: {e}")
+            conn.commit()
+            conn.close()
+        else:
+            # SQLite
+            conn = sqlite3.connect("sarpanch.db")
+            cur = conn.cursor()
+            columns = ['location_lat', 'location_lng', 'location_address', 'maps_link', 'media_type', 'media_url']
+            for col in columns:
+                try:
+                    cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} TEXT")
+                    print(f"✅ Added column: {col}")
+                except Exception as e:
+                    print(f"⚠️ Column {col} already exists: {e}")
+            conn.commit()
+            conn.close()
+        print("✅ Database columns verified!")
+    except Exception as e:
+        print(f"❌ Database fix error: {e}")
+
+# Run database fix immediately
+force_fix_database()
+
 # ── Database ─────────────────────────────────────────────────
 def get_db():
     if DATABASE_URL:
@@ -31,35 +77,6 @@ def get_db():
     conn = sqlite3.connect("sarpanch.db", check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn, "sqlite"
-
-def add_missing_columns():
-    """Add missing location columns to complaints table if they don't exist"""
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    
-    columns = [
-        ('location_lat', 'REAL' if db_type == 'sqlite' else 'DOUBLE PRECISION'),
-        ('location_lng', 'REAL' if db_type == 'sqlite' else 'DOUBLE PRECISION'),
-        ('location_address', 'TEXT'),
-        ('maps_link', 'TEXT'),
-        ('media_type', 'TEXT'),
-        ('media_url', 'TEXT')
-    ]
-    
-    for col, dtype in columns:
-        try:
-            if db_type == 'pg':
-                cur.execute(f"ALTER TABLE complaints ADD COLUMN IF NOT EXISTS {col} {dtype}")
-                print(f" Added column: {col}")
-            else:
-                cur.execute(f"ALTER TABLE complaints ADD COLUMN {col} {dtype}")
-                print(f" Added column: {col}")
-        except Exception as e:
-            print(f" Column {col} already exists or error: {e}")
-    
-    conn.commit()
-    conn.close()
-    print(" Database columns check complete")
 
 def init_db():
     conn, db_type = get_db()
@@ -75,9 +92,6 @@ def init_db():
     conn.commit()
     conn.close()
     print(f" Database ready ({db_type})")
-    
-    # Add missing columns to complaints table
-    add_missing_columns()
 
 def now_str(): return datetime.now().strftime("%d-%b-%Y %H:%M")
 def fmt_time(): return datetime.now().strftime("%H:%M")
@@ -711,7 +725,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
       {% if x.status=='processing' %}<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>{% endif %}
       <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
     </div></td>
-  <tr>
+  </tr>
   {% endfor %}</tbody></table>
   {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
 </div>
@@ -745,7 +759,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#fafafa}
 <div class="sec">
   <div class="sh">📢 Announcements</div>
   {% if announcements %}
-  </table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+  <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
   {% for a in announcements %}
   <tr>
     <td><strong>{{ a.title }}</strong></td>
