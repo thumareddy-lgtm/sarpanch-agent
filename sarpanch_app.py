@@ -30,6 +30,35 @@ whatsapp_sessions = {}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# ── FORCE ADD VILLAGE COLUMN ON STARTUP (GUARANTEED) ─────────
+def force_add_village_column():
+    """Force add village column to complaints table - runs before anything else"""
+    print("🔧 Force adding village column if missing...")
+    try:
+        if DATABASE_URL:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL)
+            cur = conn.cursor()
+            cur.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS village TEXT DEFAULT ''")
+            conn.commit()
+            conn.close()
+            print("✅ Village column verified/added in PostgreSQL")
+        else:
+            conn = sqlite3.connect("sarpanch.db")
+            cur = conn.cursor()
+            try:
+                cur.execute("ALTER TABLE complaints ADD COLUMN village TEXT DEFAULT ''")
+                print("✅ Village column added in SQLite")
+            except:
+                print("✅ Village column already exists in SQLite")
+            conn.commit()
+            conn.close()
+    except Exception as e:
+        print(f"⚠️ Could not add village column: {e}")
+
+# Run this IMMEDIATELY
+force_add_village_column()
+
 # ── Helper Functions ─────────────────────────────────────────
 def now_str(): 
     return datetime.now().strftime("%d-%b-%Y %H:%M")
@@ -113,20 +142,6 @@ def init_db():
     conn.commit()
     conn.close()
     print(f" Database ready ({db_type})")
-    
-    # ── FIX: Add village column if missing (for existing databases) ──
-    try:
-        conn2, db_type2 = get_db()
-        cur2 = conn2.cursor()
-        if db_type2 == 'pg':
-            cur2.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS village TEXT DEFAULT ''")
-        else:
-            cur2.execute("ALTER TABLE complaints ADD COLUMN village TEXT DEFAULT ''")
-        conn2.commit()
-        conn2.close()
-        print("✅ Village column verified/added")
-    except Exception as e:
-        print(f"Note: Village column check: {e}")
 
 def insert_complaint(c):
     conn, db_type = get_db()
