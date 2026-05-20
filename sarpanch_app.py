@@ -77,7 +77,7 @@ def force_create_tables():
                     priority TEXT DEFAULT 'medium',
                     status TEXT DEFAULT 'pending',
                     filed_at TEXT,
-                    updated_at TEXT,
+                    updated TEXT,
                     notes TEXT DEFAULT '',
                     location_lat DOUBLE PRECISION,
                     location_lng DOUBLE PRECISION,
@@ -100,18 +100,18 @@ def force_create_tables():
                     purpose TEXT,
                     status TEXT DEFAULT 'pending',
                     filed_at TEXT,
-                    updated_at TEXT,
+                    updated TEXT,
                     notes TEXT DEFAULT ''
                 )
             """)
             
-            # Create works table
+            # Create works table (using 'updated' column name)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS works (
                     id TEXT PRIMARY KEY,
                     title TEXT,
                     status TEXT DEFAULT 'pending',
-                    updated_at TEXT
+                    updated TEXT
                 )
             """)
             
@@ -166,7 +166,7 @@ def force_create_tables():
                     priority TEXT DEFAULT 'medium',
                     status TEXT DEFAULT 'pending',
                     filed_at TEXT,
-                    updated_at TEXT,
+                    updated TEXT,
                     notes TEXT DEFAULT '',
                     location_lat REAL,
                     location_lng REAL,
@@ -188,7 +188,7 @@ def force_create_tables():
                     purpose TEXT,
                     status TEXT DEFAULT 'pending',
                     filed_at TEXT,
-                    updated_at TEXT,
+                    updated TEXT,
                     notes TEXT DEFAULT ''
                 )
             """)
@@ -198,7 +198,7 @@ def force_create_tables():
                     id TEXT PRIMARY KEY,
                     title TEXT,
                     status TEXT DEFAULT 'pending',
-                    updated_at TEXT
+                    updated TEXT
                 )
             """)
             
@@ -250,7 +250,7 @@ def insert_complaint(c):
     cur = conn.cursor()
     p = get_placeholder(db_type)
     cur.execute(f"""
-        INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,updated_at,notes,
+        INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,updated,notes,
         location_lat,location_lng,location_address,maps_link,media_type,media_url,village) 
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
@@ -265,7 +265,7 @@ def insert_certificate(c):
     cur = conn.cursor()
     p = get_placeholder(db_type)
     cur.execute(f"""
-        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,updated_at,notes) 
+        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,updated,notes) 
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
@@ -286,7 +286,7 @@ def update_status(table, ref_id, status):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    cur.execute(f"UPDATE {table} SET status = {p}, updated_at = {p} WHERE id = {p}", (status, now_str(), ref_id))
+    cur.execute(f"UPDATE {table} SET status = {p}, updated = {p} WHERE id = {p}", (status, now_str(), ref_id))
     conn.commit()
     conn.close()
 
@@ -309,7 +309,7 @@ def all_certs():
 def all_works():
     conn, db_type = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM works ORDER BY updated_at DESC")
+    cur.execute("SELECT * FROM works ORDER BY updated DESC")
     rows = [dict(r) for r in cur.fetchall()]
     conn.close()
     return rows
@@ -335,7 +335,7 @@ def insert_work(title):
     conn, db_type = get_db()
     cur = conn.cursor()
     p = get_placeholder(db_type)
-    cur.execute(f"INSERT INTO works (id,title,status,updated_at) VALUES ({p},{p},{p},{p})", 
+    cur.execute(f"INSERT INTO works (id,title,status,updated) VALUES ({p},{p},{p},{p})", 
                 (new_id("WORK-"), title, "pending", now_str()))
     conn.commit()
     conn.close()
@@ -834,7 +834,7 @@ def dashboard():
                 works.append(w)
             else:
                 works.append({
-                    'id': w[0], 'title': w[1], 'status': w[2], 'updated': w[3]
+                    'id': w[0], 'title': w[1], 'status': w[2], 'updated': w[3] if len(w) > 3 else ''
                 })
         
         announcements = []
@@ -843,7 +843,7 @@ def dashboard():
                 announcements.append(a)
             else:
                 announcements.append({
-                    'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3]
+                    'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3] if len(a) > 3 else ''
                 })
         
         counts = {
