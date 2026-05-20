@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD WITH FIXED RESOLVED SECTION AND FILTERS ────────
+# ── DASHBOARD WITH FIXED STATS AND FILTERS ───────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -707,6 +707,7 @@ def dashboard():
     
     # Get filter parameters
     filter_status = request.args.get('filter_status', 'ALL')
+    filter_priority = request.args.get('filter_priority', 'ALL')
     
     try:
         ac = all_complaints()
@@ -714,12 +715,13 @@ def dashboard():
         wo = all_works()
         an = all_announcements()
         
-        # Filter complaints by status
+        # Process complaints with filters
         filtered_complaints = []
         pending_complaints = []
         in_review_complaints = []
         in_progress_complaints = []
         resolved_complaints = []
+        high_priority_complaints = []
         
         for x in ac:
             if isinstance(x, dict):
@@ -758,11 +760,14 @@ def dashboard():
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else ''
                 }
             
-            # Apply status filter
-            if filter_status == 'ALL' or status == filter_status:
+            # Apply status and priority filters
+            status_match = (filter_status == 'ALL' or status == filter_status)
+            priority_match = (filter_priority == 'ALL' or priority == filter_priority)
+            
+            if status_match and priority_match:
                 filtered_complaints.append(c)
             
-            # Categorize for counts
+            # Categorize for counts (unfiltered for stat boxes)
             if status == 'pending':
                 pending_complaints.append(c)
             elif status == 'in_review':
@@ -771,11 +776,13 @@ def dashboard():
                 in_progress_complaints.append(c)
             elif status in ('resolved', 'rejected'):
                 resolved_complaints.append(c)
+            
+            if priority == 'high':
+                high_priority_complaints.append(c)
         
         # Process certificates
         pending_certs = []
         processing_certs = []
-        ready_certs = []
         
         for x in ce:
             if isinstance(x, dict):
@@ -797,8 +804,6 @@ def dashboard():
                 pending_certs.append(cert)
             elif status == 'processing':
                 processing_certs.append(cert)
-            elif status in ('ready', 'rejected'):
-                ready_certs.append(cert)
         
         # Process works
         works = []
@@ -829,14 +834,11 @@ def dashboard():
         
         # Counts for stat boxes
         counts = {
-            'pending': len(pending_complaints),
-            'in_review': len(in_review_complaints),
-            'in_progress': len(in_progress_complaints),
             'total_pending': len(pending_complaints) + len(in_review_complaints) + len(in_progress_complaints),
             'cert_pending': len(pending_certs) + len(processing_certs),
             'resolved': len(resolved_complaints),
             'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
-            'high': len([c for c in filtered_complaints if c.get('priority') == 'high'])
+            'high': len(high_priority_complaints)
         }
         
         return render_template_string(DASH_HTML, 
@@ -852,7 +854,8 @@ def dashboard():
             mandal=MANDAL,
             now=datetime.now().strftime("%d %b %Y, %H:%M"),
             c=counts,
-            filter_status=filter_status)
+            filter_status=filter_status,
+            filter_priority=filter_priority)
     except Exception as e:
         print(f"Dashboard error: {e}")
         return f"Dashboard error: {str(e)}", 500
@@ -1122,7 +1125,7 @@ th{background:#f4f5f7}
 </div>
 </div>
 <div class="container">
-<tr>
+</table>
 <thead><tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr></thead>
 <tbody>
 {% for s in sarpanchs %}
@@ -1195,7 +1198,6 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
 .sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 1px 4px rgba(0,0,0,.06)}
 .sc:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
-.sc.active{border:2px solid var(--green);background:#f0f9f0}
 .sc .val{font-size:24px;font-weight:700}
 .sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
 .sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
@@ -1207,6 +1209,8 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 table{width:100%;border-collapse:collapse;min-width:600px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.sortable{cursor:pointer;user-select:none}
+.sortable:hover{background:#e8e8e8}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
 .badge.pending{background:#fff4e0;color:var(--amber)}
 .badge.in_review{background:#dbeafe;color:var(--blue)}
@@ -1241,25 +1245,43 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div>
 </div>
 <div class="stats">
-<div class="sc c1" onclick="window.location.href='?filter_status=ALL'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2" onclick="window.location.href='?filter_status=ALL'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc c3" onclick="window.location.href='?filter_status=resolved'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
-<div class="sc c4" onclick="window.location.href='?filter_status=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5" onclick="window.location.href='?filter_status=ALL'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
+<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
+<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
 </div>
 <div class="filter-bar">
 <span style="font-size:12px;color:#666">Filter by Status:</span>
-<a href="?filter_status=ALL"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
+<a href="?filter_status=ALL&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status=pending&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
+<a href="?filter_status=in_review&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
+<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
+<a href="?filter_status=resolved&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
+</div>
+<div class="filter-bar">
+<span style="font-size:12px;color:#666">Filter by Priority:</span>
+<a href="?filter_status={{ filter_status }}&filter_priority=ALL"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=low"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=medium"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=high"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
 </div>
 <div class="sec">
 <div class="sh">📋 Complaints</div>
 {% if filtered_complaints %}
-<table>
-<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Problem</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+<table id="complaintTable">
+<thead>
+<tr>
+<th class="sortable" onclick="sortTable(0)">ID</th>
+<th class="sortable" onclick="sortTable(1)">Name</th>
+<th class="sortable" onclick="sortTable(2)">Category</th>
+<th>Problem</th>
+<th>Location</th>
+<th class="sortable" onclick="sortTable(5)">Priority</th>
+<th class="sortable" onclick="sortTable(6)">Status</th>
+<th>Actions</th>
+</tr>
+</thead>
 <tbody>
 {% for x in filtered_complaints %}
 <tr>
@@ -1276,7 +1298,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</div></td>
+</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1308,12 +1330,17 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
 <tbody>
 {% for w in works %}
-<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
+<tr>
+<td><strong>{{ w.id }}</strong></td>
+<td>{{ w.title }}</td>
+<td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td>{{ w.updated }}</td>
 <td class="acts">
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1326,7 +1353,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-</table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+</td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
 {% for a in announcements %}
 <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
 {% endfor %}
@@ -1341,13 +1368,15 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-</table>
+<table style="width:100%">
 <thead>
+<tr>
 <th style="width:15%">ID</th>
-<th style="width:20%">Name</th>
-<th style="width:20%">Category</th>
+<th style="width:25%">Name</th>
+<th style="width:25%">Category</th>
 <th style="width:20%">Status</th>
-<th style="width:25%">Action</th>
+<th style="width:15%">Action</th>
+</tr>
 </thead>
 <tbody>
 {% for x in resolved_complaints %}
@@ -1363,6 +1392,33 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
+<script>
+function sortTable(colIndex) {
+    var table = document.querySelector('#complaintTable');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    var ascending = table.getAttribute('data-sort-asc') === colIndex.toString() ? false : true;
+    rows.sort(function(a, b) {
+        var aVal = a.cells[colIndex].innerText.trim();
+        var bVal = b.cells[colIndex].innerText.trim();
+        if (colIndex === 5) {
+            var pOrder = {LOW: 1, MEDIUM: 2, HIGH: 3};
+            aVal = pOrder[aVal] || 0;
+            bVal = pOrder[bVal] || 0;
+        } else if (colIndex === 6) {
+            var sOrder = {PENDING: 1, 'IN REVIEW': 2, 'IN PROGRESS': 3, RESOLVED: 4, REJECTED: 5};
+            aVal = sOrder[aVal] || 0;
+            bVal = sOrder[bVal] || 0;
+        }
+        if (aVal < bVal) return ascending ? -1 : 1;
+        if (aVal > bVal) return ascending ? 1 : -1;
+        return 0;
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+    table.setAttribute('data-sort-asc', ascending ? colIndex : '');
+}
+</script>
 </body></html>
 """
 
