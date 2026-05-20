@@ -695,7 +695,7 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD WITH FULL SECTIONS ─────────────────────────────
+# ── DASHBOARD WITH FIXED RESOLVED SECTION ─────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -766,7 +766,7 @@ def dashboard():
             else:
                 resolved_complaints.append(c)
         
-        # Counts for stats boxes (unfiltered)
+        # Counts for stats boxes
         all_active = []
         for x in ac:
             if isinstance(x, dict):
@@ -778,7 +778,7 @@ def dashboard():
             if status in ('pending', 'in_review', 'in_progress'):
                 all_active.append({'status': status, 'priority': priority})
         
-        # Calculate resolved count safely
+        # Calculate resolved count
         resolved_count = 0
         for x in ac:
             if isinstance(x, dict):
@@ -788,19 +788,29 @@ def dashboard():
                 if len(x) > 7 and x[7] in ('resolved', 'rejected'):
                     resolved_count += 1
         
-        # Process certificates
-        certificates = []
+        # Process certificates - only pending/processing for active
+        active_certs = []
+        resolved_certs = []
         for x in ce:
             if isinstance(x, dict):
-                certificates.append({
+                status = x.get('status', 'pending')
+                cert = {
                     'id': x.get('id', ''), 'type': x.get('type', ''), 'name': x.get('name', ''),
-                    'status': x.get('status', 'pending'), 'filed_at': x.get('filed_at', '')
-                })
+                    'phone': x.get('phone', ''), 'purpose': x.get('purpose', ''),
+                    'status': status, 'filed_at': x.get('filed_at', '')
+                }
             else:
-                certificates.append({
+                status = x[6] if len(x) > 6 else 'pending'
+                cert = {
                     'id': x[0], 'type': x[1], 'name': x[2],
-                    'status': x[6] if len(x) > 6 else 'pending', 'filed_at': x[7] if len(x) > 7 else ''
-                })
+                    'phone': x[4] if len(x) > 4 else '', 'purpose': x[5] if len(x) > 5 else '',
+                    'status': status, 'filed_at': x[7] if len(x) > 7 else ''
+                }
+            
+            if status in ('pending', 'processing'):
+                active_certs.append(cert)
+            else:
+                resolved_certs.append(cert)
         
         # Process works
         works = []
@@ -831,7 +841,7 @@ def dashboard():
         
         counts = {
             'pc': len(all_active),
-            'cert': len(certificates),
+            'cert': len(active_certs),
             'res': resolved_count,
             'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
             'hi': len([c for c in all_active if c.get('priority') == 'high'])
@@ -840,8 +850,8 @@ def dashboard():
         return render_template_string(DASH_HTML, 
             active_complaints=active_complaints,
             resolved_complaints=resolved_complaints,
-            active_certs=certificates,
-            resolved_certs=[],
+            active_certs=active_certs,
+            resolved_certs=resolved_certs,
             works=works,
             announcements=announcements,
             village=village,
@@ -1047,13 +1057,13 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:150px;height:150px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59;display:block}
+.photo-preview{width:320px;height:320px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
 button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.photo-preview{width:100px;height:100px}}
+@media (max-width:600px){.photo-preview{width:200px;height:200px}}
 </style>
 </head>
 <body>
@@ -1185,7 +1195,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .tl{display:flex;align-items:center;gap:15px;flex-wrap:wrap}
-.avatar{width:120px;height:120px;object-fit:cover;border:3px solid rgba(255,255,255,.4);border-radius:10px}
+.avatar{width:120px;height:120px;object-fit:cover;border:3px solid rgba(255,255,255,.4);border-radius:50%}
 .nav-links{display:flex;gap:15px;flex-wrap:wrap}
 .nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
@@ -1285,7 +1295,9 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📋 Certificate Requests</div>
 {% if active_certs %}
-<table><thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+<table>
+<thead><tr><th>#</th><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Filed</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>
 {% for x in active_certs %}
 <tr>
 <td>{{ loop.index }}</td>
@@ -1302,13 +1314,16 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div></td>
 </tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No pending certificate requests!</div>{% endif %}
 </div>
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table><thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead><tbody>
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<tbody>
 {% for w in works %}
 <tr>
 <td><strong>{{ w.id }}</strong></td>
@@ -1322,36 +1337,43 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div></td>
 </tr>
 {% endfor %}
-</tbody><tr>
+</tbody>
+</table>
 {% else %}<div class="empty">No works added.</div>{% endif %}
-<form method="post" action="/addwork" class="wf">
-<input type="text" name="title" placeholder="Add new work" required>
-<button type="submit">+ Add Work</button>
+<form method="post" action="/addwork" class="wf" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
 </form>
 </div>
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<td><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+<table>
+<thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead>
+<tbody>
 {% for a in announcements %}
 <tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
-<form method="post" action="/announce" class="af">
-<input type="text" name="title" placeholder="Title" required>
-<input type="text" name="body" placeholder="Message..." required>
-<button type="submit">Post Announcement</button>
+<form method="post" action="/announce" class="af" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<input type="text" name="body" placeholder="Message..." required style="flex:2;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
 </form>
 </div>
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-</table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead><tbody>
+<table>
+<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+<tbody>
 {% for x in resolved_complaints %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 <script>
