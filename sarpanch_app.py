@@ -778,6 +778,16 @@ def dashboard():
             if status in ('pending', 'in_review', 'in_progress'):
                 all_active.append({'status': status, 'priority': priority})
         
+        # Calculate resolved count safely
+        resolved_count = 0
+        for x in ac:
+            if isinstance(x, dict):
+                if x.get('status') in ('resolved', 'rejected'):
+                    resolved_count += 1
+            else:
+                if len(x) > 7 and x[7] in ('resolved', 'rejected'):
+                    resolved_count += 1
+        
         certificates = []
         for x in ce:
             if isinstance(x, dict):
@@ -817,9 +827,9 @@ def dashboard():
                 })
         
         counts = {
-            'pc': len([c for c in all_active]),
+            'pc': len(all_active),
             'cert': len(certificates),
-            'res': len([c for c in ac if c.get('status') if isinstance(c, dict) else c[7] in ('resolved', 'rejected')]),
+            'res': resolved_count,
             'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
             'hi': len([c for c in all_active if c.get('priority') == 'high'])
         }
@@ -1034,13 +1044,13 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:320px;height:320px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59;display:block}
+.photo-preview{width:200px;height:200px;object-fit:cover;margin-bottom:15px;border:3px solid #4a7c59;display:block}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
 button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.photo-preview{width:200px;height:200px}}
+@media (max-width:600px){.photo-preview{width:150px;height:150px}}
 </style>
 </head>
 <body>
@@ -1114,11 +1124,11 @@ th{background:#f4f5f7}
 {% for s in sarpanchs %}
 <tr>
 <td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td>{{ s.username }}</td>
-<td>{{ s.village_name }}</td>
-<td>{{ s.phone or '-' }}</td>
-<td>{{ s.email or '-' }}</td>
-<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
+<td style="text-align:center">{{ s.username }}</td>
+<td style="text-align:center">{{ s.village_name }}</td>
+<td style="text-align:center">{{ s.phone or '-' }}</td>
+<td style="text-align:center">{{ s.email or '-' }}</td>
+<td style="text-align:center">{{ s.created_at[:16] if s.created_at else '-' }}</td>
 </tr>
 {% endfor %}
 </tbody>
