@@ -277,7 +277,6 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
-    """Download voice file to server permanently"""
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
         return None
@@ -417,26 +416,71 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
     # ──────────────────────────────────────────────────────────
-    # HANDLE BOTH TRIGGER WORDS AND NUMBER INPUTS
+    # HANDLE MENU OPTIONS 1-7 (ALWAYS ALLOWED)
+    # This must come BEFORE the idle state check
     # ──────────────────────────────────────────────────────────
+    if ml in ("1", "2", "3", "4", "5", "6", "7"):
+        if ml == "1":
+            ctx["state"] = "c_name"
+            if lang == "te":
+                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
+            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
+        elif ml == "2":
+            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
+            ctx["state"] = "cert_type"
+            if lang == "te":
+                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
+            return f"📋 Certificate Type:\n{cats}", ctx
+        elif ml == "3":
+            ctx["state"] = "track_id"
+            if lang == "te":
+                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
+            return "🔍 Enter your Reference ID:", ctx
+        elif ml == "4":
+            lines = [f"{n}: {d}" for n, d in SCHEMES]
+            if lang == "te":
+                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "5":
+            rows = active_works()
+            if not rows:
+                if lang == "te":
+                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            lines = [f"• {w['title']}" for w in rows[:5]]
+            if lang == "te":
+                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "6":
+            rows = all_announcements()[:3]
+            if not rows:
+                if lang == "te":
+                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            if lang == "te":
+                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "7":
+            if lang == "te":
+                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
+            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
-    # If state is idle, only allow trigger words to show menu
+    # ──────────────────────────────────────────────────────────
+    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS (hi, hello, start, menu, help)
+    # Numbers 1-7 are handled above, so they won't be ignored
+    # ──────────────────────────────────────────────────────────
     if state == "idle":
         trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
         if ml in trigger_words:
-            # Show menu and stay in idle state (user will then type 1-7)
             return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
         else:
-            # Ignore all other messages when idle
+            # Ignore all other random messages when idle
             print(f"🚫 Ignoring non-trigger message in idle: {msg}")
             return None, ctx
    
     # ──────────────────────────────────────────────────────────
-    # ONCE STATE IS NOT IDLE (user has started a flow), 
-    # WE CAN PROCESS NUMBERS AND OTHER INPUTS
+    # COMPLAINT FLOW (continues from states set above)
     # ──────────────────────────────────────────────────────────
-   
-    # COMPLAINT FLOW
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -522,7 +566,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
        
-        # Download voice permanently if exists
         media_url = ctx.get("media_url", "")
         if ctx.get("temp_audio_id"):
             permanent_url = download_voice_permanently(ctx["temp_audio_id"], ref)
@@ -562,7 +605,9 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply += "\n\nType *menu* for main menu"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
    
+    # ──────────────────────────────────────────────────────────
     # CERTIFICATE FLOW
+    # ──────────────────────────────────────────────────────────
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -645,55 +690,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-   
-    # ──────────────────────────────────────────────────────────
-    # HANDLE MENU OPTIONS 1-7 WHEN USER IS IN IDLE BUT JUST SAW MENU
-    # ──────────────────────────────────────────────────────────
-    if ml in ("1", "2", "3", "4", "5", "6", "7"):
-        if ml == "1":
-            ctx["state"] = "c_name"
-            if lang == "te":
-                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
-            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
-        elif ml == "2":
-            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
-            ctx["state"] = "cert_type"
-            if lang == "te":
-                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
-            return f"📋 Certificate Type:\n{cats}", ctx
-        elif ml == "3":
-            ctx["state"] = "track_id"
-            if lang == "te":
-                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
-            return "🔍 Enter your Reference ID:", ctx
-        elif ml == "4":
-            lines = [f"{n}: {d}" for n, d in SCHEMES]
-            if lang == "te":
-                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "5":
-            rows = active_works()
-            if not rows:
-                if lang == "te":
-                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            lines = [f"• {w['title']}" for w in rows[:5]]
-            if lang == "te":
-                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "6":
-            rows = all_announcements()[:3]
-            if not rows:
-                if lang == "te":
-                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            if lang == "te":
-                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "7":
-            if lang == "te":
-                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
-            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
@@ -901,6 +897,7 @@ def dashboard():
                 priority = x.get('priority', 'medium')
                 village_name = x.get('village', '')
                 location_text = x.get('location', '')
+                filed_at = x.get('filed_at', '')
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -912,7 +909,7 @@ def dashboard():
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
+                    'status': status, 'filed_at': filed_at, 'maps_link': x.get('maps_link', ''),
                     'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
                 }
             else:
@@ -920,6 +917,7 @@ def dashboard():
                 priority = x[6] if len(x) > 6 else 'medium'
                 village_name = x[17] if len(x) > 17 else ''
                 location_text = x[5] if len(x) > 5 else ''
+                filed_at = x[8] if len(x) > 8 else ''
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -930,7 +928,7 @@ def dashboard():
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
+                    'status': status, 'filed_at': filed_at, 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
            
