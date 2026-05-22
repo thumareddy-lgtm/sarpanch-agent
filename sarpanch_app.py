@@ -19,12 +19,13 @@ VERIFY_TOKEN   = os.environ.get("VERIFY_TOKEN", "kolukonda2024")
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs('static/voices', exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
+
+whatsapp_sessions = {}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -126,15 +127,6 @@ def init_db():
         )
     """)
     
-    # Persistent sessions table
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS bot_sessions (
-            phone TEXT PRIMARY KEY,
-            session_data TEXT,
-            updated_at TEXT
-        )
-    """)
-    
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -145,47 +137,7 @@ def init_db():
     
     conn.commit()
     conn.close()
-    print(f"✅ Database ready ({db_type})")
-
-# ── PERSISTENT SESSION FUNCTIONS ─────────────────────────────
-def get_session(phone):
-    """Retrieve session from database"""
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        cur.execute(f"SELECT session_data FROM bot_sessions WHERE phone = {p}", (phone,))
-        row = cur.fetchone()
-        conn.close()
-        if row:
-            session_json = row[0] if isinstance(row, tuple) else row["session_data"]
-            return json.loads(session_json)
-    except Exception as e:
-        print(f"⚠️ Session load error: {e}")
-    return {"state": "idle", "lang": "en"}
-
-def save_session(phone, session_data):
-    """Save session to database"""
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        session_json = json.dumps(session_data)
-        if db_type == "pg":
-            cur.execute(f"""
-                INSERT INTO bot_sessions (phone, session_data, updated_at)
-                VALUES ({p},{p},{p})
-                ON CONFLICT (phone) DO UPDATE SET session_data={p}, updated_at={p}
-            """, (phone, session_json, now_str(), session_json, now_str()))
-        else:
-            cur.execute(f"""
-                INSERT OR REPLACE INTO bot_sessions (phone, session_data, updated_at)
-                VALUES ({p},{p},{p})
-            """, (phone, session_json, now_str()))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"⚠️ Session save error: {e}")
+    print(f" Database ready ({db_type})")
 
 def insert_complaint(c):
     conn, db_type = get_db()
@@ -322,47 +274,6 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
-# ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
-def download_voice_permanently(voice_id, complaint_id):
-    """Download voice file to server permanently"""
-    if not META_TOKEN:
-        print("❌ No META_TOKEN for voice download")
-        return None
-    
-    voice_dir = os.path.join('static', 'voices')
-    os.makedirs(voice_dir, exist_ok=True)
-    
-    headers = {"Authorization": f"Bearer {META_TOKEN}"}
-    
-    try:
-        media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
-        if media_resp.status_code != 200:
-            print(f"❌ Failed to get media info: {media_resp.status_code}")
-            return None
-        
-        download_url = media_resp.json().get("url")
-        if not download_url:
-            print("❌ No download URL in response")
-            return None
-        
-        audio_resp = requests.get(download_url, headers=headers, timeout=30)
-        if audio_resp.status_code != 200:
-            print(f"❌ Failed to download audio: {audio_resp.status_code}")
-            return None
-        
-        filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
-        filepath = os.path.join(voice_dir, filename)
-        
-        with open(filepath, 'wb') as f:
-            f.write(audio_resp.content)
-        
-        print(f"✅ Voice saved permanently: {filename}")
-        return f"/static/voices/{filename}"
-        
-    except Exception as e:
-        print(f"❌ Voice download error: {e}")
-        return None
-
 # ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
     try:
@@ -405,13 +316,13 @@ def send_whatsapp_message(to_number, message):
     try:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
-            print(f"📨 Message sent to {to_number}")
+            print(f" Message sent to {to_number}")
             return True
         else:
-            print(f"❌ Failed: {response.status_code} - {response.text}")
+            print(f" Failed: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f" Error: {e}")
         return False
 
 # ── Menus and Constants ──────────────────────────────────────
@@ -438,28 +349,9 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx): 
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── TRIGGER WORDS FOR BOT ACTIVATION ─────────────────────────
-TRIGGER_WORDS_EN = {'hi', 'hello', 'start', 'menu', 'help', 'namaskaram'}
-TRIGGER_WORDS_TE = {'హాయ్', 'నమస్కారం', 'స్టార్ట్', 'మెను', 'సహాయం'}
-
-def is_trigger_word(msg):
-    """Check if message is a trigger word to start the bot"""
-    msg_lower = msg.lower().strip()
-    return msg_lower in TRIGGER_WORDS_EN or msg_lower in TRIGGER_WORDS_TE
-
-# ── BOT REPLY FUNCTION (STRICT MENU MODE) ────────────────────
+# ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
-    
-    # Handle empty session (restart recovery)
-    if not ctx:
-        ctx = {"state": "idle", "lang": "en"}
-    
-    # Normalize emoji numbers to plain digits
-    emoji_map = {"1️⃣": "1", "2️⃣": "2", "3️⃣": "3", "4️⃣": "4",
-                 "5️⃣": "5", "6️⃣": "6", "7️⃣": "7"}
-    msg = emoji_map.get(msg, msg)
-    
     ml = msg.lower()
     state = ctx.get("state", "idle")
     lang = ctx.get("lang", "en")
@@ -472,29 +364,82 @@ def bot_reply(user_msg, ctx, media_info=None):
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
     
-    # If in idle state, ONLY respond to trigger words
-    if state == "idle":
-        if is_trigger_word(msg):
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-        if ml in ("menu", "back", "home"):
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-        print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-        return None, ctx
+    # Menu navigation (always allowed during active session)
+    if ml in ("menu", "home", "back"):
+        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
     # Handle voice message
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
-        ctx["temp_audio_id"] = media_info.get("audio_id", "")
         ctx["state"] = "waiting_for_location"
         if lang == "te":
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
     
-    if ml in ("menu", "home", "back"):
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    # ──────────────────────────────────────────────────────────
+    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
+    # ──────────────────────────────────────────────────────────
+    if state == "idle":
+        # Allowed trigger words to start the bot
+        trigger_words = {'hi', 'hello', 'start', 'help', '1', '2', '3', '4', '5', '6', '7'}
+        
+        if ml not in trigger_words:
+            # Ignore everything else - NO RESPONSE
+            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+            return None, ctx
+        
+        # Handle menu options 1-7
+        if ml == "1":
+            ctx["state"] = "c_name"
+            if lang == "te":
+                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
+            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
+        elif ml == "2":
+            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
+            ctx["state"] = "cert_type"
+            if lang == "te":
+                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
+            return f"📋 Certificate Type:\n{cats}", ctx
+        elif ml == "3":
+            ctx["state"] = "track_id"
+            if lang == "te":
+                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
+            return "🔍 Enter your Reference ID:", ctx
+        elif ml == "4":
+            lines = [f"{n}: {d}" for n, d in SCHEMES]
+            if lang == "te":
+                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "5":
+            rows = active_works()
+            if not rows:
+                if lang == "te":
+                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            lines = [f"• {w['title']}" for w in rows[:5]]
+            if lang == "te":
+                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "6":
+            rows = all_announcements()[:3]
+            if not rows:
+                if lang == "te":
+                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            if lang == "te":
+                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "7":
+            if lang == "te":
+                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
+            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
+        else:  # hi, hello, start, help
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
-    # COMPLAINT FLOW
+    # ──────────────────────────────────────────────────────────
+    # COMPLAINT FLOW (only continues if already started)
+    # ──────────────────────────────────────────────────────────
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -558,6 +503,7 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
+        print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
         
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
@@ -579,13 +525,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
         
-        media_url = ctx.get("media_url", "")
-        if ctx.get("temp_audio_id"):
-            permanent_url = download_voice_permanently(ctx["temp_audio_id"], ref)
-            if permanent_url:
-                media_url = permanent_url
-                print(f"✅ Voice saved to: {permanent_url}")
-        
         rec = {
             "id": ref,
             "name": ctx.get("c_name", "Unknown"),
@@ -599,19 +538,13 @@ def bot_reply(user_msg, ctx, media_info=None):
             "location_lng": lng,
             "location_address": ctx.get("location_address", ""),
             "maps_link": maps_link,
-            "media_type": "voice" if ctx.get("temp_audio_id") else "",
-            "media_url": media_url,
+            "media_type": ctx.get("media_type", ""),
+            "media_url": ctx.get("media_url", ""),
             "village": village
         }
         
-        try:
-            insert_complaint(rec)
-            print(f"✅ Complaint {ref} saved successfully")
-        except Exception as e:
-            print(f"❌ insert_complaint failed: {e}")
-            if lang == "te":
-                return "❌ నమోదు విఫలమైంది. దయచేసి మళ్ళీ ప్రయత్నించండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "❌ Registration failed. Please try again.\n\nType *menu* to start over", {"state": "idle", "lang": lang}
+        print(f"🔍 Saving complaint: {rec}")
+        insert_complaint(rec)
         
         if lang == "te":
             reply = f"✅ *ఫిర్యాదు నమోదు చేయబడింది!*\n\n📋 టిక్కెట్ ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec['category']}\n📍 లొకేషన్: {rec['location']}\n⚡ ప్రాధాన్యత: {PRI_MAP[rec['priority']]}\n📅 తేదీ: {rec['filed_at']}"
@@ -622,9 +555,11 @@ def bot_reply(user_msg, ctx, media_info=None):
             reply += f"\n🗺️ Map: {maps_link}"
         
         reply += "\n\nType *menu* for main menu"
-        return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
+        return reply, {"state": "idle", "lang": lang}
     
+    # ──────────────────────────────────────────────────────────
     # CERTIFICATE FLOW
+    # ──────────────────────────────────────────────────────────
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -685,7 +620,9 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
+    # ──────────────────────────────────────────────────────────
     # TRACK STATUS FLOW
+    # ──────────────────────────────────────────────────────────
     if state == "track_id":
         if len(msg) < 5:
             if lang == "te":
@@ -708,8 +645,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
-    print(f"🚫 No matching handler for: state={state}, msg={msg}")
-    return None, ctx
+    return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
 # ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
@@ -721,7 +657,7 @@ def whatsapp_webhook():
     
     try:
         data = request.json
-        print(f"📨 Webhook received")
+        print(f" Webhook received")
         
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
@@ -735,16 +671,19 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
         
-        session_data = get_session(sender)
+        if sender not in whatsapp_sessions:
+            whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
+        
+        session_data = whatsapp_sessions[sender]
         
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
-            print(f"📝 Text from {sender}: {user_msg}")
+            print(f" Text from {sender}: {user_msg}")
             reply, session_data = bot_reply(user_msg, session_data)
             if reply is not None:
                 send_whatsapp_message(sender, reply)
             else:
-                print(f"🔇 No response generated for: {user_msg}")
+                print(f"🔇 No response sent (ignored message)")
         
         elif msg_type == "location":
             lat = msg["location"]["latitude"]
@@ -753,13 +692,12 @@ def whatsapp_webhook():
             address = msg["location"].get("address", "")
             maps_link = f"https://maps.google.com/?q={lat},{lng}"
             detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
-            print(f"📍 Location from {sender}: {detected_village}")
+            print(f" Location from {sender}: {detected_village}")
             session_data["location_lat"] = lat
             session_data["location_lng"] = lng
             session_data["location_address"] = address or name
             session_data["maps_link"] = maps_link
             session_data["village"] = detected_village
-            
             if session_data.get("state") == "waiting_for_location":
                 session_data["state"] = "c_pri"
                 lang = session_data.get("lang", "en")
@@ -778,8 +716,9 @@ def whatsapp_webhook():
         elif msg_type == "audio" or msg_type == "voice":
             audio_id = msg.get("audio", {}).get("id") or msg.get("voice", {}).get("id")
             if audio_id:
+                voice_url = f"https://graph.facebook.com/v19.0/{audio_id}"
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
-                media_info = {"type": "voice", "url": None, "audio_id": audio_id}
+                media_info = {"type": "voice", "url": voice_url}
                 reply, session_data = bot_reply("", session_data, media_info)
                 if reply is not None:
                     send_whatsapp_message(sender, reply)
@@ -790,22 +729,19 @@ def whatsapp_webhook():
                     send_whatsapp_message(sender, "Please send text, location, or voice message.")
         
         else:
-            if session_data.get("state") != "idle":
-                if session_data.get("lang", "en") == "te":
-                    send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
-                else:
-                    send_whatsapp_message(sender, "Please send text, location, or voice message.")
+            if session_data.get("lang", "en") == "te":
+                send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
             else:
-                print(f"🔇 Ignoring unsupported message type: {msg_type}")
+                send_whatsapp_message(sender, "Please send text, location, or voice message.")
         
-        save_session(sender, session_data)
+        whatsapp_sessions[sender] = session_data
         
     except Exception as e:
-        print(f"❌ Webhook error: {e}")
+        print(f" Webhook error: {e}")
     
     return "OK", 200
 
-# ── ROUTES (Dashboard, Login, Profile, etc.) ─────────────────
+# ── ROUTES ────────────────────────────────────────────────────
 @app.route("/")
 def home():
     if 'sarpanch_username' in session:
@@ -915,7 +851,6 @@ def dashboard():
                 priority = x.get('priority', 'medium')
                 village_name = x.get('village', '')
                 location_text = x.get('location', '')
-                filed_at = x.get('filed_at', '')
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -927,7 +862,7 @@ def dashboard():
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': filed_at, 'maps_link': x.get('maps_link', ''),
+                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
                     'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
                 }
             else:
@@ -935,7 +870,6 @@ def dashboard():
                 priority = x[6] if len(x) > 6 else 'medium'
                 village_name = x[17] if len(x) > 17 else ''
                 location_text = x[5] if len(x) > 5 else ''
-                filed_at = x[8] if len(x) > 8 else ''
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -946,7 +880,7 @@ def dashboard():
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': filed_at, 'maps_link': x[13] if len(x) > 13 else '',
+                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
             
@@ -1195,7 +1129,7 @@ def add_sarpanch():
     
     return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
-# ── HTML TEMPLATES (Simplified for brevity, but working) ────
+# ── HTML TEMPLATES ────────────────────────────────────────────
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -1243,6 +1177,7 @@ body{font-family:Arial;margin:0;background:#f0f2f5}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
 button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
+@media (max-width:600px){.photo-preview{width:200px;height:200px}}
 </style>
 </head>
 <body>
@@ -1298,6 +1233,7 @@ th{background:#f4f5f7}
 .photo{width:50px;height:50px;object-fit:cover;border-radius:50%}
 .btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
 .btn-back{background:#666}
+@media (max-width:768px){th,td{padding:8px;font-size:12px}}
 </style>
 </head>
 <body>
@@ -1317,11 +1253,11 @@ th{background:#f4f5f7}
 {% for s in sarpanchs %}
 <tr>
 <td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td>{{ s.username }}</td>
-<td>{{ s.village_name }}</td>
-<td>{{ s.phone or '-' }}</td>
-<td>{{ s.email or '-' }}</td>
-<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
+<td style="text-align:center">{{ s.username }}</td>
+<td style="text-align:center">{{ s.village_name }}</td>
+<td style="text-align:center">{{ s.phone or '-' }}</td>
+<td style="text-align:center">{{ s.email or '-' }}</td>
+<td style="text-align:center">{{ s.created_at[:16] if s.created_at else '-' }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1365,18 +1301,19 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 </body></html>
 """
 
-# Simple dashboard template (without complex CSS to avoid syntax errors)
+# Dashboard HTML - keep your existing working DASH_HTML here
+# (Using a simplified version to avoid syntax errors - replace with your original if needed)
 DASH_HTML = """
 <!DOCTYPE html>
 <html>
 <head><title>{{ village }} Dashboard</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Arial;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
+*{box-sizing:border-box}
+body{font-family:Arial;background:#f0f2f5;margin:0}
+.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
-.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center;box-shadow:0 1px 4px rgba(0,0,0,0.1)}
+.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center}
 .sc .val{font-size:24px;font-weight:700}
 .sc .lbl{font-size:11px;color:#666}
 .filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
@@ -1395,17 +1332,12 @@ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
 .br{background:#c0392b}
 .ba{background:#e07b00}
 .empty{text-align:center;padding:28px;color:#666}
-.nav-links{display:flex;gap:15px}
-.nav-links a{color:white;text-decoration:none}
-.avatar{width:50px;height:50px;border-radius:50%;object-fit:cover}
+.nav-links a{color:white;text-decoration:none;margin-left:15px}
 </style>
 </head>
 <body>
 <div class="header">
-<div style="display:flex;align-items:center;gap:15px">
-{% if photo %}<img src="{{ photo }}" class="avatar">{% endif %}
 <div><strong>{{ village }}</strong><br><small>{{ username }} · {{ mandal }}</small></div>
-</div>
 <div class="nav-links">
 <a href="/profile">Profile</a>
 <a href="/sarpanchs">Sarpanchs</a>
@@ -1419,24 +1351,10 @@ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
 <div class="sc"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
 <div class="sc"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
 </div>
-<div class="filter-bar">
-<a href="?filter_status=ALL&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
-</div>
-<div class="filter-bar">
-<a href="?filter_status={{ filter_status }}&filter_priority=ALL"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All Priority</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=low"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=medium"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=high"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
-</div>
-<div class="sec">
-<div class="sh">📋 Complaints</div>
+<div class="sec"><div class="sh">📋 Complaints</div>
 {% if filtered_complaints %}
 <table>
-<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Problem</th><th>Location</th><th>Priority</th><th>Status</th><th>Reported</th><th>Actions</th></tr></thead>
+<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Problem</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in filtered_complaints %}
 <tr>
@@ -1447,7 +1365,6 @@ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td><strong>{{ x.priority|upper }}</strong></td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-<td><small>{{ x.filed_at }}</small></td>
 <td>
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
@@ -1480,6 +1397,9 @@ button{background:#1a73e8;color:white;border:none;padding:10px 20px;border-radiu
 .reply-box{width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px}
 .back-btn{background:#666;color:white;padding:8px 15px;text-decoration:none;display:inline-block;margin-bottom:20px;border-radius:5px}
 hr{margin:20px 0}
+.map-link{color:#1a73e8;text-decoration:none}
+.audio-player{width:100%;margin-top:5px}
+@media (max-width:600px){.label{width:100%;display:block;margin-bottom:5px}}
 </style>
 </head>
 <body>
@@ -1496,11 +1416,11 @@ hr{margin:20px 0}
 <div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
 <div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
 {% if complaint.get('maps_link') %}
-<div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank">Click to view on Google Maps</a></div>
+<div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a><br><small>Coordinates: {{ complaint.get('location_lat', 'N/A') }}, {{ complaint.get('location_lng', 'N/A') }}</small></div>
 {% endif %}
 {% if complaint.get('media_type') == 'voice' and complaint.get('media_url') %}
 <div class="field"><span class="label">🎤 Voice Message:</span><br>
-<audio controls style="width:100%">
+<audio controls class="audio-player">
 <source src="{{ complaint.get('media_url') }}" type="audio/ogg">
 Your browser does not support the audio element.
 </audio>
@@ -1537,5 +1457,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Strict Menu Mode: Bot only responds to: hi, hello, start, menu, telugu, english")
+    print(f"🎯 Bot only responds to: hi, hello, start, menu, 1-7, telugu, english")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
