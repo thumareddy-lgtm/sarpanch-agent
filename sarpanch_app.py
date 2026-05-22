@@ -26,8 +26,6 @@ app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
-whatsapp_sessions = {}
-
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -128,6 +126,15 @@ def init_db():
         )
     """)
     
+    # Persistent sessions table
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS bot_sessions (
+            phone TEXT PRIMARY KEY,
+            session_data TEXT,
+            updated_at TEXT
+        )
+    """)
+    
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -139,6 +146,46 @@ def init_db():
     conn.commit()
     conn.close()
     print(f"✅ Database ready ({db_type})")
+
+# ── PERSISTENT SESSION FUNCTIONS ─────────────────────────────
+def get_session(phone):
+    """Retrieve session from database"""
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        cur.execute(f"SELECT session_data FROM bot_sessions WHERE phone = {p}", (phone,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            session_json = row[0] if isinstance(row, tuple) else row["session_data"]
+            return json.loads(session_json)
+    except Exception as e:
+        print(f"⚠️ Session load error: {e}")
+    return {"state": "idle", "lang": "en"}
+
+def save_session(phone, session_data):
+    """Save session to database"""
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        session_json = json.dumps(session_data)
+        if db_type == "pg":
+            cur.execute(f"""
+                INSERT INTO bot_sessions (phone, session_data, updated_at)
+                VALUES ({p},{p},{p})
+                ON CONFLICT (phone) DO UPDATE SET session_data={p}, updated_at={p}
+            """, (phone, session_json, now_str(), session_json, now_str()))
+        else:
+            cur.execute(f"""
+                INSERT OR REPLACE INTO bot_sessions (phone, session_data, updated_at)
+                VALUES ({p},{p},{p})
+            """, (phone, session_json, now_str()))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ Session save error: {e}")
 
 def insert_complaint(c):
     conn, db_type = get_db()
@@ -277,21 +324,18 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
-    """Download voice file to server permanently - no token needed after download"""
+    """Download voice file to server permanently"""
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
         return None
     
-    # Create voices directory
     voice_dir = os.path.join('static', 'voices')
     os.makedirs(voice_dir, exist_ok=True)
     
     headers = {"Authorization": f"Bearer {META_TOKEN}"}
     
     try:
-        # Step 1: Get media URL from Meta
         media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
-        
         if media_resp.status_code != 200:
             print(f"❌ Failed to get media info: {media_resp.status_code}")
             return None
@@ -301,14 +345,11 @@ def download_voice_permanently(voice_id, complaint_id):
             print("❌ No download URL in response")
             return None
         
-        # Step 2: Download the audio file
         audio_resp = requests.get(download_url, headers=headers, timeout=30)
-        
         if audio_resp.status_code != 200:
             print(f"❌ Failed to download audio: {audio_resp.status_code}")
             return None
         
-        # Step 3: Save permanently
         filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
         filepath = os.path.join(voice_dir, filename)
         
@@ -397,24 +438,53 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx): 
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION ───────────────────────────────────────
+# ── TRIGGER WORDS FOR BOT ACTIVATION ─────────────────────────
+TRIGGER_WORDS_EN = {'hi', 'hello', 'start', 'menu', 'help', 'namaskaram'}
+TRIGGER_WORDS_TE = {'హాయ్', 'నమస్కారం', 'స్టార్ట్', 'మెను', 'సహాయం'}
+
+def is_trigger_word(msg):
+    """Check if message is a trigger word to start the bot"""
+    msg_lower = msg.lower().strip()
+    return msg_lower in TRIGGER_WORDS_EN or msg_lower in TRIGGER_WORDS_TE
+
+# ── BOT REPLY FUNCTION (STRICT MENU MODE) ────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
+    
+    # Handle empty session (restart recovery)
+    if not ctx:
+        ctx = {"state": "idle", "lang": "en"}
+    
+    # Normalize emoji numbers to plain digits
+    emoji_map = {"1️⃣": "1", "2️⃣": "2", "3️⃣": "3", "4️⃣": "4",
+                 "5️⃣": "5", "6️⃣": "6", "7️⃣": "7"}
+    msg = emoji_map.get(msg, msg)
+    
     ml = msg.lower()
     state = ctx.get("state", "idle")
     lang = ctx.get("lang", "en")
     
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}, lang={lang}")
     
+    # Language switching (always allowed)
     if ml == "telugu":
         return MENU_TE, {"state": "idle", "lang": "te"}
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
     
-    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    # If in idle state, ONLY respond to trigger words
+    if state == "idle":
+        # Check if this is a trigger word to start the bot
+        if is_trigger_word(msg):
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        # Also allow "menu" and "back" to show menu
+        if ml in ("menu", "back", "home"):
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        # For anything else in idle state - NO RESPONSE
+        print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+        return None, ctx  # Return None to indicate no response should be sent
     
-    # Handle voice message
+    # Handle voice message (only allowed during active complaint flow)
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
@@ -424,54 +494,11 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
     
-    if state == "idle":
-        if ml == "1":
-            ctx["state"] = "c_name"
-            if lang == "te":
-                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
-            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
-        elif ml == "2":
-            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
-            ctx["state"] = "cert_type"
-            if lang == "te":
-                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
-            return f"📋 Certificate Type:\n{cats}", ctx
-        elif ml == "3":
-            ctx["state"] = "track_id"
-            if lang == "te":
-                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
-            return "🔍 Enter your Reference ID:", ctx
-        elif ml == "4":
-            lines = [f"{n}: {d}" for n, d in SCHEMES]
-            if lang == "te":
-                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "5":
-            rows = active_works()
-            if not rows:
-                if lang == "te":
-                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            lines = [f"• {w['title']}" for w in rows[:5]]
-            if lang == "te":
-                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "6":
-            rows = all_announcements()[:3]
-            if not rows:
-                if lang == "te":
-                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            if lang == "te":
-                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "7":
-            if lang == "te":
-                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
-            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-        else:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    # MENU NAVIGATION (only when in active state)
+    if ml in ("menu", "home", "back"):
+        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
+    # COMPLAINT FLOW (only continues if already started)
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -583,8 +610,15 @@ def bot_reply(user_msg, ctx, media_info=None):
             "village": village
         }
         
-        print(f"🔍 Saving complaint: {rec}")
-        insert_complaint(rec)
+        # Wrap insert in try/except
+        try:
+            insert_complaint(rec)
+            print(f"✅ Complaint {ref} saved successfully")
+        except Exception as e:
+            print(f"❌ insert_complaint failed: {e}")
+            if lang == "te":
+                return "❌ నమోదు విఫలమైంది. దయచేసి మళ్ళీ ప్రయత్నించండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "❌ Registration failed. Please try again.\n\nType *menu* to start over", {"state": "idle", "lang": lang}
         
         if lang == "te":
             reply = f"✅ *ఫిర్యాదు నమోదు చేయబడింది!*\n\n📋 టిక్కెట్ ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec['category']}\n📍 లొకేషన్: {rec['location']}\n⚡ ప్రాధాన్యత: {PRI_MAP[rec['priority']]}\n📅 తేదీ: {rec['filed_at']}"
@@ -597,6 +631,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply += "\n\nType *menu* for main menu"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
     
+    # CERTIFICATE FLOW
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -657,6 +692,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
+    # TRACK STATUS FLOW
     if state == "track_id":
         if len(msg) < 5:
             if lang == "te":
@@ -679,7 +715,46 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
-    return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    # GOVERNMENT SCHEMES (always accessible from any state via "4")
+    if ml == "4" and state != "idle":
+        lines = [f"{n}: {d}" for n, d in SCHEMES]
+        if lang == "te":
+            return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+        return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+    
+    # DEVELOPMENT WORKS (always accessible from any state via "5")
+    if ml == "5" and state != "idle":
+        rows = active_works()
+        if not rows:
+            if lang == "te":
+                return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        lines = [f"• {w['title']}" for w in rows[:5]]
+        if lang == "te":
+            return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+        return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+    
+    # ANNOUNCEMENTS (always accessible from any state via "6")
+    if ml == "6" and state != "idle":
+        rows = all_announcements()[:3]
+        if not rows:
+            if lang == "te":
+                return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        if lang == "te":
+            return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+        return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+    
+    # OFFICE INFO (always accessible from any state via "7")
+    if ml == "7" and state != "idle":
+        if lang == "te":
+            return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
+        return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
+    
+    # If we reach here, the input doesn't match any expected flow
+    # Don't respond - just ignore
+    print(f"🚫 No matching handler for: state={state}, msg={msg}")
+    return None, ctx
 
 # ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
@@ -705,16 +780,22 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
         
-        if sender not in whatsapp_sessions:
-            whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
+        # Get persistent session
+        session_data = get_session(sender)
         
-        session_data = whatsapp_sessions[sender]
-        
+        # Handle different message types
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
             print(f"📝 Text from {sender}: {user_msg}")
+            
+            # Only process if there's a response
             reply, session_data = bot_reply(user_msg, session_data)
-            send_whatsapp_message(sender, reply)
+            
+            # Only send message if reply is not None
+            if reply is not None:
+                send_whatsapp_message(sender, reply)
+            else:
+                print(f"🔇 No response generated for: {user_msg}")
         
         elif msg_type == "location":
             lat = msg["location"]["latitude"]
@@ -729,6 +810,7 @@ def whatsapp_webhook():
             session_data["location_address"] = address or name
             session_data["maps_link"] = maps_link
             session_data["village"] = detected_village
+            
             if session_data.get("state") == "waiting_for_location":
                 session_data["state"] = "c_pri"
                 lang = session_data.get("lang", "en")
@@ -750,7 +832,8 @@ def whatsapp_webhook():
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
                 media_info = {"type": "voice", "url": None, "audio_id": audio_id}
                 reply, session_data = bot_reply("", session_data, media_info)
-                send_whatsapp_message(sender, reply)
+                if reply is not None:
+                    send_whatsapp_message(sender, reply)
             else:
                 if session_data.get("lang", "en") == "te":
                     send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
@@ -758,19 +841,24 @@ def whatsapp_webhook():
                     send_whatsapp_message(sender, "Please send text, location, or voice message.")
         
         else:
-            if session_data.get("lang", "en") == "te":
-                send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
+            # For unsupported message types, only respond if in active flow
+            if session_data.get("state") != "idle":
+                if session_data.get("lang", "en") == "te":
+                    send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
+                else:
+                    send_whatsapp_message(sender, "Please send text, location, or voice message.")
             else:
-                send_whatsapp_message(sender, "Please send text, location, or voice message.")
+                print(f"🔇 Ignoring unsupported message type: {msg_type}")
         
-        whatsapp_sessions[sender] = session_data
+        # Save session back to database
+        save_session(sender, session_data)
         
     except Exception as e:
         print(f"❌ Webhook error: {e}")
     
     return "OK", 200
 
-# ── ROUTES ────────────────────────────────────────────────────
+# ── ROUTES (Dashboard, Login, Profile, etc.) ─────────────────
 @app.route("/")
 def home():
     if 'sarpanch_username' in session:
@@ -849,7 +937,6 @@ def profile():
     
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
-# ── DASHBOARD ────────────────────────────────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
@@ -1630,4 +1717,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
+    print(f"🎯 Strict Menu Mode: Bot only responds to: hi, hello, start, menu, telugu, english")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
