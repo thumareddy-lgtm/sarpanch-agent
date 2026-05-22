@@ -498,7 +498,7 @@ def bot_reply(user_msg, ctx, media_info=None):
     if ml in ("menu", "home", "back"):
         return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
     
-    # COMPLAINT FLOW (only continues if already started)
+    # COMPLAINT FLOW - FIXED: Proper state transitions
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -562,7 +562,6 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
-        print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
         
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
@@ -715,44 +714,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
     
-    # GOVERNMENT SCHEMES (always accessible from any state via "4")
-    if ml == "4" and state != "idle":
-        lines = [f"{n}: {d}" for n, d in SCHEMES]
-        if lang == "te":
-            return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-        return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-    
-    # DEVELOPMENT WORKS (always accessible from any state via "5")
-    if ml == "5" and state != "idle":
-        rows = active_works()
-        if not rows:
-            if lang == "te":
-                return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        lines = [f"• {w['title']}" for w in rows[:5]]
-        if lang == "te":
-            return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-        return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-    
-    # ANNOUNCEMENTS (always accessible from any state via "6")
-    if ml == "6" and state != "idle":
-        rows = all_announcements()[:3]
-        if not rows:
-            if lang == "te":
-                return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        if lang == "te":
-            return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-        return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-    
-    # OFFICE INFO (always accessible from any state via "7")
-    if ml == "7" and state != "idle":
-        if lang == "te":
-            return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
-        return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-    
     # If we reach here, the input doesn't match any expected flow
-    # Don't respond - just ignore
     print(f"🚫 No matching handler for: state={state}, msg={msg}")
     return None, ctx
 
@@ -788,7 +750,7 @@ def whatsapp_webhook():
             user_msg = msg["text"]["body"].strip()
             print(f"📝 Text from {sender}: {user_msg}")
             
-            # Only process if there's a response
+            # Process the message
             reply, session_data = bot_reply(user_msg, session_data)
             
             # Only send message if reply is not None
@@ -968,6 +930,7 @@ def dashboard():
                 priority = x.get('priority', 'medium')
                 village_name = x.get('village', '')
                 location_text = x.get('location', '')
+                filed_at = x.get('filed_at', '')
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -979,7 +942,7 @@ def dashboard():
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
+                    'status': status, 'filed_at': filed_at, 'maps_link': x.get('maps_link', ''),
                     'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
                 }
             else:
@@ -987,6 +950,7 @@ def dashboard():
                 priority = x[6] if len(x) > 6 else 'medium'
                 village_name = x[17] if len(x) > 17 else ''
                 location_text = x[5] if len(x) > 5 else ''
+                filed_at = x[8] if len(x) > 8 else ''
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -997,7 +961,7 @@ def dashboard():
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
+                    'status': status, 'filed_at': filed_at, 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
             
@@ -1416,8 +1380,9 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 </form>
 </div>
 </body></html>
-"""
+"
 
+# ── FIXED DASHBOARD HTML WITH TIME COLUMN ────────────────────
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>{{ village }} Dashboard</title>
@@ -1445,7 +1410,7 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .filter-btn.active{background:var(--green);color:white}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:600px}
+table{width:100%;border-collapse:collapse;min-width:700px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .sortable{cursor:pointer;user-select:none}
@@ -1519,6 +1484,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <th>Location</th>
 <th class="sortable" onclick="sortTable(5)">Priority</th>
 <th class="sortable" onclick="sortTable(6)">Status</th>
+<th class="sortable" onclick="sortTable(7)">📅 Reported On</th>
 <th>Actions</th>
 </tr>
 </thead>
@@ -1532,6 +1498,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+<td><small>{{ x.filed_at }}</small></td>
 <td class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
@@ -1549,14 +1516,14 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sh">📋 Certificate Requests</div>
 {% if pending_certs or processing_certs %}
 <table>
-<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
+<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>📅 Requested On</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in pending_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td><td><small>{{ x.filed_at }}</small></td>
 <td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 {% for x in processing_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td><td><small>{{ x.filed_at }}</small></td>
 <td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 </tbody>
@@ -1603,10 +1570,10 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>📅 Resolved On</th><th>Action</th></tr></thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td><td><small>{{ x.filed_at }}</small></td>
 <td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
 </tbody></table>
