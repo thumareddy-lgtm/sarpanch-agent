@@ -19,6 +19,7 @@ VERIFY_TOKEN   = os.environ.get("VERIFY_TOKEN", "kolukonda2024")
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs('static/voices', exist_ok=True)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
@@ -58,13 +59,13 @@ def force_add_village_column():
 force_add_village_column()
 
 # ── Helper Functions ─────────────────────────────────────────
-def now_str(): 
+def now_str():
     return datetime.now().strftime("%d-%b-%Y %H:%M")
 
-def fmt_time(): 
+def fmt_time():
     return datetime.now().strftime("%H:%M")
 
-def new_id(prefix=""): 
+def new_id(prefix=""):
     return f"{prefix}{str(uuid.uuid4())[:6].upper()}"
 
 def get_placeholder(db_type):
@@ -90,43 +91,43 @@ def init_db():
     u = "updated" if db_type == "pg" else "updated_at"
     ai = "SERIAL" if db_type == "pg" else "INTEGER"
     autoincrement = "" if db_type == "pg" else "AUTOINCREMENT"
-    
+   
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS complaints (
-            id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT, 
-            description TEXT, location TEXT, priority TEXT DEFAULT 'medium', 
+            id TEXT PRIMARY KEY, name TEXT, phone TEXT, category TEXT,
+            description TEXT, location TEXT, priority TEXT DEFAULT 'medium',
             status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '',
-            location_lat REAL, location_lng REAL, location_address TEXT, 
+            location_lat REAL, location_lng REAL, location_address TEXT,
             maps_link TEXT, media_type TEXT, media_url TEXT, village TEXT DEFAULT ''
         )
     """)
-    
+   
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS certificates (
-            id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT, 
+            id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT,
             purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT ''
         )
     """)
-    
+   
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS works (
             id TEXT PRIMARY KEY, title TEXT, status TEXT DEFAULT 'pending', {u} TEXT
         )
     """)
-    
+   
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS announcements (
             id {ai} PRIMARY KEY {autoincrement}, title TEXT, body TEXT, date TEXT
         )
     """)
-    
+   
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS sarpanch_users (
             id {ai} PRIMARY KEY {autoincrement}, username TEXT UNIQUE, password TEXT,
             village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT
         )
     """)
-    
+   
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -134,10 +135,10 @@ def init_db():
             INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at)
             VALUES ({p},{p},{p},{p},{p},{p})
         """, ('kolukonda_sarpanch', default_password, 'Kolukonda', '9999999999', 'sarpanch@kolukonda.in', now_str()))
-    
+   
     conn.commit()
     conn.close()
-    print(f" Database ready ({db_type})")
+    print(f"✅ Database ready ({db_type})")
 
 def insert_complaint(c):
     conn, db_type = get_db()
@@ -146,7 +147,7 @@ def insert_complaint(c):
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
         INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,
-        location_lat,location_lng,location_address,maps_link,media_type,media_url,village) 
+        location_lat,location_lng,location_address,maps_link,media_type,media_url,village)
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
         (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
@@ -161,7 +162,7 @@ def insert_certificate(c):
     p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
-        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes) 
+        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes)
         VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
         (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
@@ -236,7 +237,7 @@ def insert_work(title):
     cur = conn.cursor()
     p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
-    cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})", 
+    cur.execute(f"INSERT INTO works (id,title,status,{u}) VALUES ({p},{p},{p},{p})",
                 (new_id("WORK-"), title, "pending", now_str()))
     conn.commit()
     conn.close()
@@ -274,6 +275,53 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
+# ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
+def download_voice_permanently(voice_id, complaint_id):
+    """Download voice file to server permanently - no token needed after download"""
+    if not META_TOKEN:
+        print("❌ No META_TOKEN for voice download")
+        return None
+   
+    # Create voices directory
+    voice_dir = os.path.join('static', 'voices')
+    os.makedirs(voice_dir, exist_ok=True)
+   
+    headers = {"Authorization": f"Bearer {META_TOKEN}"}
+   
+    try:
+        # Step 1: Get media URL from Meta
+        media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
+       
+        if media_resp.status_code != 200:
+            print(f"❌ Failed to get media info: {media_resp.status_code}")
+            return None
+       
+        download_url = media_resp.json().get("url")
+        if not download_url:
+            print("❌ No download URL in response")
+            return None
+       
+        # Step 2: Download the audio file
+        audio_resp = requests.get(download_url, headers=headers, timeout=30)
+       
+        if audio_resp.status_code != 200:
+            print(f"❌ Failed to download audio: {audio_resp.status_code}")
+            return None
+       
+        # Step 3: Save permanently
+        filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
+        filepath = os.path.join(voice_dir, filename)
+       
+        with open(filepath, 'wb') as f:
+            f.write(audio_resp.content)
+       
+        print(f"✅ Voice saved permanently: {filename}")
+        return f"/static/voices/{filename}"
+       
+    except Exception as e:
+        print(f"❌ Voice download error: {e}")
+        return None
+
 # ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
     try:
@@ -301,7 +349,7 @@ def send_whatsapp_message(to_number, message):
     if not META_TOKEN:
         print(" META_TOKEN not set")
         return False
-    
+   
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
         "Authorization": f"Bearer {META_TOKEN}",
@@ -316,13 +364,13 @@ def send_whatsapp_message(to_number, message):
     try:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
-            print(f" Message sent to {to_number}")
+            print(f"📨 Message sent to {to_number}")
             return True
         else:
-            print(f" Failed: {response.status_code} - {response.text}")
+            print(f"❌ Failed: {response.status_code} - {response.text}")
             return False
     except Exception as e:
-        print(f" Error: {e}")
+        print(f"❌ Error: {e}")
         return False
 
 # ── Menus and Constants ──────────────────────────────────────
@@ -346,7 +394,7 @@ SCHEMES = [("Rythu Bandhu","₹5000/acre/season for farmers"),("PM Awas Yojana",
 STATUS_MAP = {"pending":"Pending","in_review":"In Review","in_progress":"In Progress","resolved":"Resolved","rejected":"Rejected","ready":"Ready to Collect","processing":"Processing"}
 PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
-def get_menu(ctx): 
+def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
 # ── BOT REPLY FUNCTION ───────────────────────────────────────
@@ -355,41 +403,28 @@ def bot_reply(user_msg, ctx, media_info=None):
     ml = msg.lower()
     state = ctx.get("state", "idle")
     lang = ctx.get("lang", "en")
-    
+   
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}, lang={lang}")
-    
-    # Language switching (always allowed)
+   
     if ml == "telugu":
         return MENU_TE, {"state": "idle", "lang": "te"}
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
-    
-    # Menu navigation (always allowed during active session)
-    if ml in ("menu", "home", "back"):
+   
+    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
         return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-    
+   
     # Handle voice message
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
+        ctx["temp_audio_id"] = media_info.get("audio_id", "")
         ctx["state"] = "waiting_for_location"
         if lang == "te":
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
-    
-    # ──────────────────────────────────────────────────────────
-    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
-    # ──────────────────────────────────────────────────────────
+   
     if state == "idle":
-        # Allowed trigger words to start the bot
-        trigger_words = {'hi', 'hello', 'start', 'help', '1', '2', '3', '4', '5', '6', '7'}
-        
-        if ml not in trigger_words:
-            # Ignore everything else - NO RESPONSE
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
-        
-        # Handle menu options 1-7
         if ml == "1":
             ctx["state"] = "c_name"
             if lang == "te":
@@ -434,12 +469,9 @@ def bot_reply(user_msg, ctx, media_info=None):
             if lang == "te":
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-        else:  # hi, hello, start, help
+        else:
             return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-    
-    # ──────────────────────────────────────────────────────────
-    # COMPLAINT FLOW (only continues if already started)
-    # ──────────────────────────────────────────────────────────
+   
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -450,7 +482,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"నమస్కారం {ctx['c_name']}!\n\nమొబైల్ నంబర్ (10 అంకెలు):", ctx
         return f"Hello {ctx['c_name']}!\n\nMobile number (10 digits):", ctx
-    
+   
     if state == "c_phone":
         if not (msg.isdigit() and len(msg) >= 10):
             if lang == "te":
@@ -462,7 +494,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"📂 వర్గం ఎంచుకోండి:\n{cats}", ctx
         return f"📂 Select complaint category:\n{cats}", ctx
-    
+   
     if state == "c_cat":
         if msg not in COMPLAINT_CATS:
             if lang == "te":
@@ -473,7 +505,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"📝 వర్గం: {ctx['c_cat']}\n\nసమస్య వివరించండి:", ctx
         return f"📝 Category: {ctx['c_cat']}\n\nDescribe the problem:", ctx
-    
+   
     if state == "c_desc":
         if len(msg) < 5:
             if lang == "te":
@@ -484,7 +516,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return "📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location) లేదా ఊరి పేరు టైప్ చేయండి:", ctx
         return "📍 Share your location (📎 → Location) or type village name:", ctx
-    
+   
     if state == "waiting_for_location":
         detected_village = detect_village_from_text(msg)
         if detected_village:
@@ -495,36 +527,44 @@ def bot_reply(user_msg, ctx, media_info=None):
             print(f"📍 Location text saved: {msg}")
         else:
             print(f"📍 Village from GPS: {ctx.get('village')}")
-        
+       
         ctx["state"] = "c_pri"
         if lang == "te":
             return "⚡ ఎంత అత్యవసరం?\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ", ctx
         return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
-    
+   
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
         print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
-        
+       
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
             if lang == "te":
                 return "⚡ దయచేసి 1, 2, లేదా 3 టైప్ చేయండి:", ctx
             return "⚡ Please reply with 1, 2, or 3:", ctx
-        
+       
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
-        
+       
         village = ctx.get("village")
         if not village or village == "Unknown":
             village = ctx.get("location_text", "")
         if not village or village == "":
             village = VILLAGE_NAME
-        
+       
         print(f"✅ Final village for complaint: {village}")
-        
+       
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
-        
+       
+        # Download voice permanently if exists
+        media_url = ctx.get("media_url", "")
+        if ctx.get("temp_audio_id"):
+            permanent_url = download_voice_permanently(ctx["temp_audio_id"], ref)
+            if permanent_url:
+                media_url = permanent_url
+                print(f"✅ Voice saved to: {permanent_url}")
+       
         rec = {
             "id": ref,
             "name": ctx.get("c_name", "Unknown"),
@@ -538,28 +578,25 @@ def bot_reply(user_msg, ctx, media_info=None):
             "location_lng": lng,
             "location_address": ctx.get("location_address", ""),
             "maps_link": maps_link,
-            "media_type": ctx.get("media_type", ""),
-            "media_url": ctx.get("media_url", ""),
+            "media_type": "voice" if ctx.get("temp_audio_id") else "",
+            "media_url": media_url,
             "village": village
         }
-        
+       
         print(f"🔍 Saving complaint: {rec}")
         insert_complaint(rec)
-        
+       
         if lang == "te":
             reply = f"✅ *ఫిర్యాదు నమోదు చేయబడింది!*\n\n📋 టిక్కెట్ ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec['category']}\n📍 లొకేషన్: {rec['location']}\n⚡ ప్రాధాన్యత: {PRI_MAP[rec['priority']]}\n📅 తేదీ: {rec['filed_at']}"
         else:
             reply = f"✅ *Complaint Registered!*\n\n📋 Ticket ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
-        
+       
         if maps_link:
             reply += f"\n🗺️ Map: {maps_link}"
-        
+       
         reply += "\n\nType *menu* for main menu"
-        return reply, {"state": "idle", "lang": lang}
-    
-    # ──────────────────────────────────────────────────────────
-    # CERTIFICATE FLOW
-    # ──────────────────────────────────────────────────────────
+        return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
+   
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -570,7 +607,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return "📄 అప్లికెంట్ పూర్తి పేరు:", ctx
         return "📄 Applicant full name:", ctx
-    
+   
     if state == "cert_name":
         if len(msg) < 2:
             if lang == "te":
@@ -581,7 +618,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return "👨 తండ్రి/భర్త పేరు:", ctx
         return "👨 Father's/Husband's name:", ctx
-    
+   
     if state == "cert_father":
         if len(msg) < 2:
             if lang == "te":
@@ -592,7 +629,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return "📱 మొబైల్ నంబర్ (10 అంకెలు):", ctx
         return "📱 Mobile number (10 digits):", ctx
-    
+   
     if state == "cert_phone":
         if not (msg.isdigit() and len(msg) >= 10):
             if lang == "te":
@@ -603,7 +640,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return "📝 ప్రయోజనం (ఉదా: బ్యాంక్ లోన్, కళాశాల ప్రవేశం):", ctx
         return "📝 Purpose (e.g., Bank loan, College admission):", ctx
-    
+   
     if state == "cert_purpose":
         if len(msg) < 3:
             if lang == "te":
@@ -619,10 +656,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-    
-    # ──────────────────────────────────────────────────────────
-    # TRACK STATUS FLOW
-    # ──────────────────────────────────────────────────────────
+   
     if state == "track_id":
         if len(msg) < 5:
             if lang == "te":
@@ -634,17 +668,17 @@ def bot_reply(user_msg, ctx, media_info=None):
             if lang == "te":
                 return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
             return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        
+       
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
         if ref.startswith("CMP"):
             if lang == "te":
                 return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
             return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        
+       
         if lang == "te":
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-    
+   
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
 # ── WHATSAPP WEBHOOK ─────────────────────────────────────────
@@ -654,37 +688,34 @@ def whatsapp_webhook():
         if request.args.get("hub.verify_token") == VERIFY_TOKEN:
             return request.args.get("hub.challenge", "")
         return "Invalid token", 403
-    
+   
     try:
         data = request.json
-        print(f" Webhook received")
-        
+        print(f"📨 Webhook received")
+       
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
         value = changes.get("value", {})
         messages = value.get("messages", [])
-        
+       
         if not messages:
             return "OK", 200
-        
+       
         msg = messages[0]
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
-        
+       
         if sender not in whatsapp_sessions:
             whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
-        
+       
         session_data = whatsapp_sessions[sender]
-        
+       
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
-            print(f" Text from {sender}: {user_msg}")
+            print(f"📝 Text from {sender}: {user_msg}")
             reply, session_data = bot_reply(user_msg, session_data)
-            if reply is not None:
-                send_whatsapp_message(sender, reply)
-            else:
-                print(f"🔇 No response sent (ignored message)")
-        
+            send_whatsapp_message(sender, reply)
+       
         elif msg_type == "location":
             lat = msg["location"]["latitude"]
             lng = msg["location"]["longitude"]
@@ -692,7 +723,7 @@ def whatsapp_webhook():
             address = msg["location"].get("address", "")
             maps_link = f"https://maps.google.com/?q={lat},{lng}"
             detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
-            print(f" Location from {sender}: {detected_village}")
+            print(f"📍 Location from {sender}: {detected_village}")
             session_data["location_lat"] = lat
             session_data["location_lng"] = lng
             session_data["location_address"] = address or name
@@ -712,33 +743,31 @@ def whatsapp_webhook():
                 else:
                     reply = f"📍 Location received!\n\nVillage: {detected_village}\n\nContinue with your complaint"
                 send_whatsapp_message(sender, reply)
-        
+       
         elif msg_type == "audio" or msg_type == "voice":
             audio_id = msg.get("audio", {}).get("id") or msg.get("voice", {}).get("id")
             if audio_id:
-                voice_url = f"https://graph.facebook.com/v19.0/{audio_id}"
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
-                media_info = {"type": "voice", "url": voice_url}
+                media_info = {"type": "voice", "url": None, "audio_id": audio_id}
                 reply, session_data = bot_reply("", session_data, media_info)
-                if reply is not None:
-                    send_whatsapp_message(sender, reply)
+                send_whatsapp_message(sender, reply)
             else:
                 if session_data.get("lang", "en") == "te":
                     send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
                 else:
                     send_whatsapp_message(sender, "Please send text, location, or voice message.")
-        
+       
         else:
             if session_data.get("lang", "en") == "te":
                 send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
             else:
                 send_whatsapp_message(sender, "Please send text, location, or voice message.")
-        
+       
         whatsapp_sessions[sender] = session_data
-        
+       
     except Exception as e:
-        print(f" Webhook error: {e}")
-    
+        print(f"❌ Webhook error: {e}")
+   
     return "OK", 200
 
 # ── ROUTES ────────────────────────────────────────────────────
@@ -755,16 +784,16 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
-        
+       
         try:
             conn, db_type = get_db()
             cur = conn.cursor()
             p = get_placeholder(db_type)
-            
+           
             cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
             user = cur.fetchone()
             conn.close()
-            
+           
             if user:
                 if isinstance(user, dict):
                     session['sarpanch_username'] = user['username']
@@ -780,7 +809,7 @@ def login():
         except Exception as e:
             print(f"Login error: {e}")
             error = f"Login error: {str(e)}"
-    
+   
     return render_template_string(LOGIN_TEMPLATE, error=error)
 
 @app.route("/logout")
@@ -792,10 +821,10 @@ def logout():
 def profile():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
+   
     username = session['sarpanch_username']
     user = get_sarpanch_by_username(username)
-    
+   
     if request.method == "POST":
         if 'photo' in request.files:
             file = request.files['photo']
@@ -805,46 +834,47 @@ def profile():
                 file.save(filepath)
                 update_sarpanch_photo(username, f"/static/uploads/{filename}")
                 session['sarpanch_photo'] = f"/static/uploads/{filename}"
-        
+       
         phone = request.form.get("phone", "")
         email = request.form.get("email", "")
-        
+       
         conn, db_type = get_db()
         cur = conn.cursor()
         p = get_placeholder(db_type)
         cur.execute(f"UPDATE sarpanch_users SET phone = {p}, email = {p} WHERE username = {p}", (phone, email, username))
         conn.commit()
         conn.close()
-        
+       
         return redirect(url_for('profile'))
-    
+   
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
+# ── DASHBOARD ────────────────────────────────────────────────
 @app.route("/dashboard")
 def dashboard():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
+   
     village = session.get('sarpanch_village', 'Kolukonda')
     username = session.get('sarpanch_username', 'Sarpanch')
     photo = session.get('sarpanch_photo', '')
-    
+   
     filter_status = request.args.get('filter_status', 'ALL')
     filter_priority = request.args.get('filter_priority', 'ALL')
-    
+   
     try:
         ac = all_complaints()
         ce = all_certs()
         wo = all_works()
         an = all_announcements()
-        
+       
         filtered_complaints = []
         pending_complaints = []
         in_review_complaints = []
         in_progress_complaints = []
         resolved_complaints = []
         high_priority_complaints = []
-        
+       
         for x in ac:
             if isinstance(x, dict):
                 status = x.get('status', 'pending')
@@ -857,7 +887,7 @@ def dashboard():
                 problem_text = x.get('description', '')
                 if not problem_text:
                     problem_text = 'No description'
-                
+               
                 c = {
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
@@ -876,20 +906,20 @@ def dashboard():
                 problem_text = x[4] if len(x) > 4 else ''
                 if not problem_text:
                     problem_text = 'No description'
-                
+               
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
                     'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
-            
+           
             status_match = (filter_status == 'ALL' or status == filter_status)
             priority_match = (filter_priority == 'ALL' or priority == filter_priority)
-            
+           
             if status_match and priority_match:
                 filtered_complaints.append(c)
-            
+           
             if status == 'pending':
                 pending_complaints.append(c)
             elif status == 'in_review':
@@ -898,13 +928,13 @@ def dashboard():
                 in_progress_complaints.append(c)
             elif status in ('resolved', 'rejected'):
                 resolved_complaints.append(c)
-            
+           
             if priority == 'high':
                 high_priority_complaints.append(c)
-        
+       
         pending_certs = []
         processing_certs = []
-        
+       
         for x in ce:
             if isinstance(x, dict):
                 status = x.get('status', 'pending')
@@ -920,17 +950,17 @@ def dashboard():
                     'phone': x[4] if len(x) > 4 else '', 'purpose': x[5] if len(x) > 5 else '',
                     'status': status, 'filed_at': x[7] if len(x) > 7 else ''
                 }
-            
+           
             if status == 'pending':
                 pending_certs.append(cert)
             elif status == 'processing':
                 processing_certs.append(cert)
-        
+       
         works = []
         for w in wo:
             if isinstance(w, dict):
                 works.append({
-                    'id': w.get('id', ''), 'title': w.get('title', ''), 
+                    'id': w.get('id', ''), 'title': w.get('title', ''),
                     'status': w.get('status', 'pending'), 'updated': w.get('updated', '')
                 })
             else:
@@ -938,19 +968,19 @@ def dashboard():
                     'id': w[0], 'title': w[1], 'status': w[2] if len(w) > 2 else 'pending',
                     'updated': w[3] if len(w) > 3 else ''
                 })
-        
+       
         announcements = []
         for a in an:
             if isinstance(a, dict):
                 announcements.append({
-                    'id': a.get('id', ''), 'title': a.get('title', ''), 
+                    'id': a.get('id', ''), 'title': a.get('title', ''),
                     'body': a.get('body', ''), 'date': a.get('date', '')
                 })
             else:
                 announcements.append({
                     'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3] if len(a) > 3 else ''
                 })
-        
+       
         counts = {
             'total_pending': len(pending_complaints) + len(in_review_complaints) + len(in_progress_complaints),
             'cert_pending': len(pending_certs) + len(processing_certs),
@@ -958,8 +988,8 @@ def dashboard():
             'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
             'high': len(high_priority_complaints)
         }
-        
-        return render_template_string(DASH_HTML, 
+       
+        return render_template_string(DASH_HTML,
             filtered_complaints=filtered_complaints,
             resolved_complaints=resolved_complaints,
             pending_certs=pending_certs,
@@ -982,7 +1012,7 @@ def dashboard():
 def view_complaint(cid):
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
+   
     try:
         conn, db_type = get_db()
         cur = conn.cursor()
@@ -990,10 +1020,10 @@ def view_complaint(cid):
         cur.execute(f"SELECT * FROM complaints WHERE id = {p}", (cid,))
         row = cur.fetchone()
         conn.close()
-        
+       
         if not row:
             return "Complaint not found", 404
-        
+       
         if isinstance(row, dict):
             complaint_dict = row
         else:
@@ -1007,7 +1037,7 @@ def view_complaint(cid):
                 'media_type': row[15] if len(row) > 15 else '',
                 'media_url': row[16] if len(row) > 16 else ''
             }
-        
+       
         return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
     except Exception as e:
         print(f"Error viewing complaint: {e}")
@@ -1017,7 +1047,7 @@ def view_complaint(cid):
 def update_status_route():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
+   
     try:
         ticket_id = request.form.get("ticket_id")
         new_status = request.form.get("status")
@@ -1037,7 +1067,7 @@ def update_status_route():
 def send_reply_route():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-    
+   
     ticket_id = request.form.get("ticket_id")
     reply_message = request.form.get("reply_message")
     conn, db_type = get_db()
@@ -1109,7 +1139,7 @@ def add_sarpanch():
         village_name = request.form.get("village_name")
         phone = request.form.get("phone")
         email = request.form.get("email")
-        
+       
         if not all([username, password, village_name]):
             error = "Username, Password, and Village Name are required"
         else:
@@ -1126,7 +1156,7 @@ def add_sarpanch():
                 error = f"Username already exists: {e}"
             finally:
                 conn.close()
-    
+   
     return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
 # ── HTML TEMPLATES ────────────────────────────────────────────
@@ -1171,7 +1201,7 @@ PROFILE_TEMPLATE = """
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:100px;height:100px;object-fit:cover;margin:0 auto 15px auto;display:block;border-radius:50%;border:3px solid #4a7c59}
+.photo-preview{width:360px;height:360px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
@@ -1301,43 +1331,67 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 </body></html>
 """
 
-# Dashboard HTML - keep your existing working DASH_HTML here
-# (Using a simplified version to avoid syntax errors - replace with your original if needed)
-DASH_HTML = """
-<!DOCTYPE html>
-<html>
-<head><title>{{ village }} Dashboard</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+# ── UPDATED DASHBOARD HTML WITH REPORTED DATE/TIME COLUMN ────
+DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>{{ village }} Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial;background:#f0f2f5;margin:0}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center}
+*{box-sizing:border-box;margin:0;padding:0}
+:root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
+body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
+.tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
+.tl{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}
+.avatar{width:360px;height:360px;object-fit:cover;border:3px solid rgba(255,255,255,.4)}
+.village-info{text-align:center}
+.village-info h1{font-size:18px}
+.village-info .ts{font-size:12px;opacity:.75}
+.nav-links{display:flex;gap:15px;flex-wrap:wrap}
+.nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
 .stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
-.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center}
+.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 1px 4px rgba(0,0,0,.06)}
+.sc:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .sc .val{font-size:24px;font-weight:700}
-.sc .lbl{font-size:11px;color:#666}
+.sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
+.sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
 .filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
-.filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0}
-.filter-btn.active{background:#4a7c59;color:white}
-.sec{margin:18px 20px;background:#fff;border-radius:12px;overflow-x:auto}
-.sh{padding:12px 18px;border-bottom:1px solid #ddd;font-weight:600}
+.filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0;font-size:12px}
+.filter-btn.active{background:var(--green);color:white}
+.sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
+.sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
 table{width:100%;border-collapse:collapse;min-width:700px}
-th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
+th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
+td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.sortable{cursor:pointer;user-select:none}
+.sortable:hover{background:#e8e8e8}
 .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
-.badge.pending{background:#fff4e0;color:#e07b00}
-.badge.resolved{background:#dcfce7;color:#4a7c59}
-.btn{padding:3px 8px;border-radius:4px;font-size:10px;text-decoration:none;display:inline-block;color:white}
-.bb{background:#0070f3}
-.bg{background:#4a7c59}
-.br{background:#c0392b}
-.ba{background:#e07b00}
-.empty{text-align:center;padding:28px;color:#666}
-.nav-links a{color:white;text-decoration:none;margin-left:15px}
+.badge.pending{background:#fff4e0;color:var(--amber)}
+.badge.in_review{background:#dbeafe;color:var(--blue)}
+.badge.in_progress{background:#e0e7ff;color:#4338ca}
+.badge.resolved{background:#dcfce7;color:var(--green)}
+.badge.rejected{background:#fee2e2;color:var(--red)}
+.acts{display:flex;gap:5px;flex-wrap:wrap}
+.btn{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;text-decoration:none;display:inline-block}
+.bb{background:var(--blue);color:#fff}.bg{background:var(--green);color:#fff}
+.br{background:var(--red);color:#fff}.ba{background:var(--amber);color:#fff}
+.empty{text-align:center;padding:28px;color:var(--sub);font-size:13px}
+.map-link{color:#1a73e8;text-decoration:none}
+.audio-player{width:100%;margin-top:5px}
+@media (max-width:768px){
+.avatar{width:200px;height:200px}
+.stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
+.tb{flex-direction:column;gap:15px;text-align:center}
+.nav-links{justify-content:center}
+.tl{align-items:center}
+}
 </style>
 </head>
 <body>
-<div class="header">
-<div><strong>{{ village }}</strong><br><small>{{ username }} · {{ mandal }}</small></div>
+<div class="tb">
+<div class="tl">
+{% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>{% endif %}
+<div class="village-info"><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
+</div>
 <div class="nav-links">
 <a href="/profile">Profile</a>
 <a href="/sarpanchs">Sarpanchs</a>
@@ -1345,27 +1399,56 @@ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
 </div>
 </div>
 <div class="stats">
-<div class="sc"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending</div></div>
-<div class="sc"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
-<div class="sc"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
+<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
+<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
 </div>
-<div class="sec"><div class="sh">📋 Complaints</div>
+<div class="filter-bar">
+<span style="font-size:12px;color:#666">Filter by Status:</span>
+<a href="?filter_status=ALL&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status=pending&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
+<a href="?filter_status=in_review&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
+<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
+<a href="?filter_status=resolved&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
+</div>
+<div class="filter-bar">
+<span style="font-size:12px;color:#666">Filter by Priority:</span>
+<a href="?filter_status={{ filter_status }}&filter_priority=ALL"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=low"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=medium"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=high"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
+</div>
+<div class="sec">
+<div class="sh">📋 Complaints</div>
 {% if filtered_complaints %}
-<table>
-<thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Problem</th><th>Location</th><th>Priority</th><th>Status</th><th>Actions</th></tr></thead>
+<table id="complaintTable">
+<thead>
+<tr>
+<th class="sortable" onclick="sortTable(0)">ID</th>
+<th class="sortable" onclick="sortTable(1)">Name</th>
+<th class="sortable" onclick="sortTable(2)">Category</th>
+<th>Problem</th>
+<th>Location</th>
+<th class="sortable" onclick="sortTable(5)">Priority</th>
+<th class="sortable" onclick="sortTable(6)">Status</th>
+<th class="sortable" onclick="sortTable(7)">📅 Reported On</th>
+<th>Actions</th>
+</tr>
+</thead>
 <tbody>
 {% for x in filtered_complaints %}
 <tr>
-<td>{{ x.id }}</td>
+<td><strong>{{ x.id }}</strong></td>
 <td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
 <td>{{ x.category }}</td>
-<td>{{ x.description[:50] }}{% if x.description|length > 50 %}...{% endif %}</td>
-<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
-<td><strong>{{ x.priority|upper }}</strong></td>
+<td><small>{{ x.description[:50] }}{% if x.description|length > 50 %}...{% endif %}</small></td>
+<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
+<td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-<td>
+<td><small>{{ x.filed_at }}</small></td>
+<td class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
@@ -1378,11 +1461,104 @@ th,td{padding:10px 12px;text-align:left;border-bottom:1px solid #ddd}
 </table>
 {% else %}<div class="empty">No complaints found.</div>{% endif %}
 </div>
+<div class="sec">
+<div class="sh">📋 Certificate Requests</div>
+{% if pending_certs or processing_certs %}
+<table>
+<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
+<tbody>
+{% for x in pending_certs %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
+<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+{% endfor %}
+{% for x in processing_certs %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
+<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}<div class="empty">No pending certificate requests.</div>{% endif %}
+</div>
+<div class="sec">
+<div class="sh">🛠️ Development Works</div>
+{% if works %}
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<tbody>
+{% for w in works %}
+<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
+<td class="acts">
+{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
+{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
+</td></tr>
+{% endfor %}
+</tbody>
+</table>
+{% else %}<div class="empty">No works added.</div>{% endif %}
+<form method="post" action="/addwork" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
+</form>
+</div>
+<div class="sec">
+<div class="sh">📢 Announcements</div>
+{% if announcements %}
+<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+{% for a in announcements %}
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No announcements.</div>{% endif %}
+<form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
+<input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<input type="text" name="body" placeholder="Message..." required style="flex:2;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
+<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
+</form>
+</div>
+<div class="sec">
+<div class="sh">✅ Resolved / Closed Items</div>
+{% if resolved_complaints %}
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+<tbody>
+{% for x in resolved_complaints %}
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+{% endfor %}
+</tbody></table>
+{% else %}<div class="empty">No resolved items.</div>{% endif %}
+</div>
+<script>
+function sortTable(colIndex) {
+    var table = document.querySelector('#complaintTable');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+    var rows = Array.from(tbody.querySelectorAll('tr'));
+    var ascending = table.getAttribute('data-sort-asc') === colIndex.toString() ? false : true;
+    rows.sort(function(a, b) {
+        var aVal = a.cells[colIndex].innerText.trim();
+        var bVal = b.cells[colIndex].innerText.trim();
+        if (colIndex === 5) {
+            var pOrder = {LOW: 1, MEDIUM: 2, HIGH: 3};
+            aVal = pOrder[aVal] || 0;
+            bVal = pOrder[bVal] || 0;
+        } else if (colIndex === 6) {
+            var sOrder = {PENDING: 1, 'IN REVIEW': 2, 'IN PROGRESS': 3, RESOLVED: 4, REJECTED: 5};
+            aVal = sOrder[aVal] || 0;
+            bVal = sOrder[bVal] || 0;
+        }
+        if (aVal < bVal) return ascending ? -1 : 1;
+        if (aVal > bVal) return ascending ? 1 : -1;
+        return 0;
+    });
+    rows.forEach(function(row) { tbody.appendChild(row); });
+    table.setAttribute('data-sort-asc', ascending ? colIndex : '');
+}
+</script>
 </body></html>
 """
 
-COMPLAINT_DETAIL_HTML = """
-<!DOCTYPE html>
+COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
 <html>
 <head><title>Complaint Details</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -1457,5 +1633,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Bot only responds to: hi, hello, start, menu, 1-7, telugu, english")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
