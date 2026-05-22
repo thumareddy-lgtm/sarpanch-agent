@@ -277,7 +277,7 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
-    """Download voice file to server permanently - no token needed after download"""
+    """Download voice file to server permanently"""
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
         return None
@@ -391,7 +391,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION (MODIFIED - ONLY RESPONDS TO TRIGGER WORDS) ──
+# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -417,27 +417,24 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
     # ──────────────────────────────────────────────────────────
-    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
+    # HANDLE BOTH TRIGGER WORDS AND NUMBER INPUTS
     # ──────────────────────────────────────────────────────────
+   
+    # If state is idle, only allow trigger words to show menu
     if state == "idle":
-        # Define trigger words that start the bot
         trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-       
-        # Check if message is a trigger word
-        if ml not in trigger_words:
-            # Ignore everything else - NO RESPONSE
+        if ml in trigger_words:
+            # Show menu and stay in idle state (user will then type 1-7)
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        else:
+            # Ignore all other messages when idle
             print(f"🚫 Ignoring non-trigger message in idle: {msg}")
             return None, ctx
-       
-        # Trigger word detected - show menu
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
     # ──────────────────────────────────────────────────────────
-    # ONCE IN ACTIVE STATE, HANDLE ALL OPTIONS (1-7)
+    # ONCE STATE IS NOT IDLE (user has started a flow), 
+    # WE CAN PROCESS NUMBERS AND OTHER INPUTS
     # ──────────────────────────────────────────────────────────
-    if state == "idle" and ml in ("1", "2", "3", "4", "5", "6", "7"):
-        # This case is already handled above, but keep for safety
-        pass
    
     # COMPLAINT FLOW
     if state == "c_name":
@@ -649,7 +646,9 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
    
-    # If user types 1-7 after menu is shown, handle them
+    # ──────────────────────────────────────────────────────────
+    # HANDLE MENU OPTIONS 1-7 WHEN USER IS IN IDLE BUT JUST SAW MENU
+    # ──────────────────────────────────────────────────────────
     if ml in ("1", "2", "3", "4", "5", "6", "7"):
         if ml == "1":
             ctx["state"] = "c_name"
@@ -1180,7 +1179,7 @@ def add_sarpanch():
    
     return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
-# ── HTML TEMPLATES (Unchanged - Keeping your working templates) ──
+# ── HTML TEMPLATES ────────────────────────────────────────────
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -1298,7 +1297,9 @@ th{background:#f4f5f7}
 <div class="container">
 <table>
 <thead>
-<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
+<tr>
+<th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th>
+</tr>
 </thead>
 <tbody>
 {% for s in sarpanchs %}
@@ -1352,7 +1353,6 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 </body></html>
 """
 
-# ── DASHBOARD HTML (Your original working version) ──
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>{{ village }} Dashboard</title>
@@ -1380,7 +1380,7 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .filter-btn.active{background:var(--green);color:white}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:600px}
+table{width:100%;border-collapse:collapse;min-width:700px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .sortable{cursor:pointer;user-select:none}
@@ -1654,5 +1654,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Bot only responds to: hi, hello, start, menu, help (and Telugu equivalents)")
+    print(f"🎯 Bot only responds to: hi, hello, start, menu, help")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
