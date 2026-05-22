@@ -1,4 +1,4 @@
-import os, uuid, sqlite3, requests, re, hashlib, json
+mport os, uuid, sqlite3, requests, re, hashlib, json
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session, url_for
 from werkzeug.utils import secure_filename
@@ -277,17 +277,21 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
+    """Download voice file to server permanently - no token needed after download"""
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
         return None
    
+    # Create voices directory
     voice_dir = os.path.join('static', 'voices')
     os.makedirs(voice_dir, exist_ok=True)
    
     headers = {"Authorization": f"Bearer {META_TOKEN}"}
    
     try:
+        # Step 1: Get media URL from Meta
         media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
+       
         if media_resp.status_code != 200:
             print(f"❌ Failed to get media info: {media_resp.status_code}")
             return None
@@ -297,11 +301,14 @@ def download_voice_permanently(voice_id, complaint_id):
             print("❌ No download URL in response")
             return None
        
+        # Step 2: Download the audio file
         audio_resp = requests.get(download_url, headers=headers, timeout=30)
+       
         if audio_resp.status_code != 200:
             print(f"❌ Failed to download audio: {audio_resp.status_code}")
             return None
        
+        # Step 3: Save permanently
         filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
         filepath = os.path.join(voice_dir, filename)
        
@@ -390,7 +397,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
+# ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -399,11 +406,13 @@ def bot_reply(user_msg, ctx, media_info=None):
    
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}, lang={lang}")
    
-    # Language switching (always allowed)
     if ml == "telugu":
         return MENU_TE, {"state": "idle", "lang": "te"}
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
+   
+    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
+        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
     # Handle voice message
     if media_info and media_info.get("type") == "voice":
@@ -415,11 +424,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
-    # ──────────────────────────────────────────────────────────
-    # FIRST: Handle menu options 1-7 (these are ALWAYS allowed
-    # when the bot is in idle state OR after menu is shown)
-    # ──────────────────────────────────────────────────────────
-    if ml in ("1", "2", "3", "4", "5", "6", "7"):
+    if state == "idle":
         if ml == "1":
             ctx["state"] = "c_name"
             if lang == "te":
@@ -464,23 +469,9 @@ def bot_reply(user_msg, ctx, media_info=None):
             if lang == "te":
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-   
-    # ──────────────────────────────────────────────────────────
-    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS (hi, hello, etc.)
-    # Numbers 1-7 are handled above, so they won't be ignored
-    # ──────────────────────────────────────────────────────────
-    if state == "idle":
-        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-        if ml in trigger_words:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
         else:
-            # Ignore all other random messages when idle
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
-    # ──────────────────────────────────────────────────────────
-    # COMPLAINT FLOW (continues from states set above)
-    # ──────────────────────────────────────────────────────────
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -566,6 +557,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
        
+        # Download voice permanently if exists
         media_url = ctx.get("media_url", "")
         if ctx.get("temp_audio_id"):
             permanent_url = download_voice_permanently(ctx["temp_audio_id"], ref)
@@ -605,7 +597,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply += "\n\nType *menu* for main menu"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
    
-    # CERTIFICATE FLOW
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -666,7 +657,6 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
    
-    # TRACK STATUS FLOW
     if state == "track_id":
         if len(msg) < 5:
             if lang == "te":
@@ -724,10 +714,7 @@ def whatsapp_webhook():
             user_msg = msg["text"]["body"].strip()
             print(f"📝 Text from {sender}: {user_msg}")
             reply, session_data = bot_reply(user_msg, session_data)
-            if reply is not None:
-                send_whatsapp_message(sender, reply)
-            else:
-                print(f"🔇 No response sent (ignored message)")
+            send_whatsapp_message(sender, reply)
        
         elif msg_type == "location":
             lat = msg["location"]["latitude"]
@@ -763,8 +750,7 @@ def whatsapp_webhook():
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
                 media_info = {"type": "voice", "url": None, "audio_id": audio_id}
                 reply, session_data = bot_reply("", session_data, media_info)
-                if reply is not None:
-                    send_whatsapp_message(sender, reply)
+                send_whatsapp_message(sender, reply)
             else:
                 if session_data.get("lang", "en") == "te":
                     send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
@@ -895,7 +881,6 @@ def dashboard():
                 priority = x.get('priority', 'medium')
                 village_name = x.get('village', '')
                 location_text = x.get('location', '')
-                filed_at = x.get('filed_at', '')
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -907,7 +892,7 @@ def dashboard():
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': filed_at, 'maps_link': x.get('maps_link', ''),
+                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
                     'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
                 }
             else:
@@ -915,7 +900,6 @@ def dashboard():
                 priority = x[6] if len(x) > 6 else 'medium'
                 village_name = x[17] if len(x) > 17 else ''
                 location_text = x[5] if len(x) > 5 else ''
-                filed_at = x[8] if len(x) > 8 else ''
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -926,7 +910,7 @@ def dashboard():
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': filed_at, 'maps_link': x[13] if len(x) > 13 else '',
+                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
            
@@ -1293,9 +1277,7 @@ th{background:#f4f5f7}
 <div class="container">
 <table>
 <thead>
-<tr>
-<th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th>
-</tr>
+<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
 </thead>
 <tbody>
 {% for s in sarpanchs %}
@@ -1376,7 +1358,7 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .filter-btn.active{background:var(--green);color:white}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:700px}
+table{width:100%;border-collapse:collapse;min-width:600px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .sortable{cursor:pointer;user-select:none}
@@ -1450,7 +1432,6 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <th>Location</th>
 <th class="sortable" onclick="sortTable(5)">Priority</th>
 <th class="sortable" onclick="sortTable(6)">Status</th>
-<th class="sortable" onclick="sortTable(7)">📅 Reported On</th>
 <th>Actions</th>
 </tr>
 </thead>
@@ -1464,14 +1445,13 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-<td><small>{{ x.filed_at }}</small></td>
 <td class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</div></td>
+</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1486,13 +1466,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <tbody>
 {% for x in pending_certs %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
-</tr>
+<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 {% for x in processing_certs %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
-</tr>
+<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1501,21 +1479,16 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<tr>
+<table>
 <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
 <tbody>
 {% for w in works %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px">{{ w.id }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ w.title }}</td>
-<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
-<td style="border:1px solid #ddd;padding:8px">{{ w.updated }}</td>
+<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
 <td class="acts">
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td>
-</tr>
+</td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1528,24 +1501,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table class="data-table">
-<thead>
-<tr>
-<th>Title</th>
-<th>Message</th>
-<th>Date</th>
-</tr>
-</thead>
-<tbody>
+<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
 {% for a in announcements %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px"><strong>{{ a.title }}</strong></td>
-<td style="border:1px solid #ddd;padding:8px">{{ a.body }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ a.date }}</td>
-</tr>
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
 {% endfor %}
-</tbody>
-</table>
+</tbody></table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
 <form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
 <input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
@@ -1556,28 +1516,13 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table class="data-table">
-<thead>
-<tr>
-<th>ID</th>
-<th>Name</th>
-<th>Category</th>
-<th>Status</th>
-<th>Action</th>
-</tr>
-</thead>
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ x.category }}</td>
-<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
-</tr>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
-</tbody>
-</table>
+</tbody></table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 <script>
@@ -1685,5 +1630,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Bot only responds to: hi, hello, start, menu, help (numbers 1-7 work after menu)")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
