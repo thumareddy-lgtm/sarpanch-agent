@@ -623,7 +623,7 @@ def bot_reply(user_msg, ctx, media_info=None):
     
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
-# ── WHATSAPP WEBHOOK WITH DEBUG LOGGING ──────────────────────
+# ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     if request.method == "GET":
@@ -633,7 +633,7 @@ def whatsapp_webhook():
     
     try:
         data = request.json
-        print(f"📨 FULL WEBHOOK DATA: {json.dumps(data, indent=2)}")  # DEBUG
+        print(f"📨 Webhook received")
         
         entry = data.get("entry", [{}])[0]
         changes = entry.get("changes", [{}])[0]
@@ -646,9 +646,6 @@ def whatsapp_webhook():
         msg = messages[0]
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
-        
-        print(f"📱 MESSAGE TYPE: {msg_type}")  # DEBUG
-        print(f"📱 FULL MESSAGE: {json.dumps(msg, indent=2)}")  # DEBUG
         
         if sender not in whatsapp_sessions:
             whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
@@ -689,31 +686,21 @@ def whatsapp_webhook():
                     reply = f"📍 Location received!\n\nVillage: {detected_village}\n\nContinue with your complaint"
                 send_whatsapp_message(sender, reply)
         
-        # FIXED: Handle both 'audio' and 'voice' message types
         elif msg_type == "audio" or msg_type == "voice":
-            # Get audio/voice ID from appropriate field
-            audio_id = None
-            if "audio" in msg:
-                audio_id = msg["audio"].get("id")
-            elif "voice" in msg:
-                audio_id = msg["voice"].get("id")
-            
+            audio_id = msg.get("audio", {}).get("id") or msg.get("voice", {}).get("id")
             if audio_id:
                 voice_url = f"https://graph.facebook.com/v19.0/{audio_id}"
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
-                print(f"🔊 Voice URL: {voice_url}")
                 media_info = {"type": "voice", "url": voice_url}
                 reply, session_data = bot_reply("", session_data, media_info)
                 send_whatsapp_message(sender, reply)
             else:
-                print(f"⚠️ No audio/voice ID found in message")
                 if session_data.get("lang", "en") == "te":
                     send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
                 else:
                     send_whatsapp_message(sender, "Please send text, location, or voice message.")
         
         else:
-            print(f"⚠️ Unknown message type: {msg_type}")
             if session_data.get("lang", "en") == "te":
                 send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
             else:
@@ -723,8 +710,6 @@ def whatsapp_webhook():
         
     except Exception as e:
         print(f"❌ Webhook error: {e}")
-        import traceback
-        traceback.print_exc()
     
     return "OK", 200
 
@@ -996,7 +981,8 @@ def view_complaint(cid):
                 'media_url': row[16] if len(row) > 16 else ''
             }
         
-        return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
+        # Pass META_TOKEN to template for voice URL access
+        return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict, meta_token=META_TOKEN)
     except Exception as e:
         print(f"Error viewing complaint: {e}")
         return f"Error: {e}", 500
@@ -1233,7 +1219,7 @@ th{background:#f4f5f7}
 </div>
 </div>
 <div class="container">
-<table>
+<tr>
 <thead><tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr></thead>
 <tbody>
 {% for s in sarpanchs %}
@@ -1417,34 +1403,69 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📋 Certificate Requests</div>
 {% if pending_certs or processing_certs %}
-</tr>
+</table>
 <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in pending_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+ution
+<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge pending">Pending</span></td>
+<td style="border:1px solid #ddd;padding:8px">
+<a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a>
+<a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
+</td>
+</tr>
 {% endfor %}
 {% for x in processing_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge processing">Processing</span></td>
+<td style="border:1px solid #ddd;padding:8px">
+<a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a>
+<a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
 {% else %}<div class="empty">No pending certificate requests.</div>{% endif %}
 </div>
+
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Title</th>
+<th>Status</th>
+<th>Updated</th>
+<th>Actions</th>
+</tr>
+</thead>
 <tbody>
 {% for w in works %}
-<tr><td><strong>{{ w.id }}</strong></td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
-<td class="acts">
-{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
-{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ w.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.title }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.updated }}</td>
+<td style="border:1px solid #ddd;padding:8px">
+{% if w.status == 'pending' %}
+<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>
+{% elif w.status == 'in_progress' %}
+<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>
+{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1454,13 +1475,25 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
 </form>
 </div>
+
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>Title</th>
+<th>Message</th>
+<th>Date</th>
+</tr>
+</thead>
 <tbody>
 {% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+<tr>
+<td style="border:1px solid #ddd;padding:8px"><strong>{{ a.title }}</strong></td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.body }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.date }}</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1471,20 +1504,35 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
 </form>
 </div>
+
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table style="width:100%">
-<thead><tr><th style="width:15%">ID</th><th style="width:25%">Name</th><th style="width:25%">Category</th><th style="width:20%">Status</th><th style="width:15%">Action</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Name</th>
+<th>Category</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr><td><strong>{{ x.id }}</strong></td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.category }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px"><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
+
 <script>
 function sortTable(colIndex) {
     var table = document.querySelector('#complaintTable');
@@ -1512,7 +1560,8 @@ function sortTable(colIndex) {
     table.setAttribute('data-sort-asc', ascending ? colIndex : '');
 }
 </script>
-</body></html>
+</body>
+</html>
 """
 
 COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
@@ -1554,7 +1603,7 @@ hr{margin:20px 0}
 {% if complaint.get('media_type') == 'voice' and complaint.get('media_url') %}
 <div class="field"><span class="label">🎤 Voice Message:</span><br>
 <audio controls class="audio-player">
-<source src="{{ complaint.get('media_url') }}" type="audio/ogg">
+<source src="{{ complaint.get('media_url') }}?access_token={{ meta_token }}" type="audio/ogg">
 Your browser does not support the audio element.
 </audio>
 </div>
