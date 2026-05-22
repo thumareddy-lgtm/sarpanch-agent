@@ -390,7 +390,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
+# ── BOT REPLY FUNCTION (FIXED - ONLY RESPONDS TO HI/HELLO) ───
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -416,9 +416,25 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
     # ──────────────────────────────────────────────────────────
-    # HANDLE MENU OPTIONS 1-7 (ALWAYS ALLOWED)
-    # This must come BEFORE the idle state check
+    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
     # ──────────────────────────────────────────────────────────
+    if state == "idle":
+        # Define trigger words that show the menu
+        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
+        
+        if ml in trigger_words:
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        else:
+            # Ignore all other random messages
+            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+            return None, ctx
+   
+    # ──────────────────────────────────────────────────────────
+    # ONCE USER HAS STARTED A FLOW (state is not idle), 
+    # HANDLE ALL INPUTS NORMALLY
+    # ──────────────────────────────────────────────────────────
+   
+    # Handle menu options 1-7 when user is in active state (after menu shown)
     if ml in ("1", "2", "3", "4", "5", "6", "7"):
         if ml == "1":
             ctx["state"] = "c_name"
@@ -465,22 +481,7 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
-    # ──────────────────────────────────────────────────────────
-    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS (hi, hello, start, menu, help)
-    # Numbers 1-7 are handled above, so they won't be ignored
-    # ──────────────────────────────────────────────────────────
-    if state == "idle":
-        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-        if ml in trigger_words:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-        else:
-            # Ignore all other random messages when idle
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
-   
-    # ──────────────────────────────────────────────────────────
-    # COMPLAINT FLOW (continues from states set above)
-    # ──────────────────────────────────────────────────────────
+    # COMPLAINT FLOW
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -605,9 +606,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply += "\n\nType *menu* for main menu"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
    
-    # ──────────────────────────────────────────────────────────
     # CERTIFICATE FLOW
-    # ──────────────────────────────────────────────────────────
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -1473,7 +1472,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</td>
+</div></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1488,11 +1487,13 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <tbody>
 {% for x in pending_certs %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
+</tr>
 {% endfor %}
 {% for x in processing_certs %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1510,7 +1511,8 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1525,7 +1527,8 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 {% if announcements %}
 <table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
 {% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td>
+</tr>
 {% endfor %}
 </tbody></table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
@@ -1542,7 +1545,8 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <tbody>
 {% for x in resolved_complaints %}
 <tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
+</tr>
 {% endfor %}
 </tbody></table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
