@@ -282,16 +282,13 @@ def download_voice_permanently(voice_id, complaint_id):
         print("❌ No META_TOKEN for voice download")
         return None
    
-    # Create voices directory
     voice_dir = os.path.join('static', 'voices')
     os.makedirs(voice_dir, exist_ok=True)
    
     headers = {"Authorization": f"Bearer {META_TOKEN}"}
    
     try:
-        # Step 1: Get media URL from Meta
         media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
-       
         if media_resp.status_code != 200:
             print(f"❌ Failed to get media info: {media_resp.status_code}")
             return None
@@ -301,14 +298,11 @@ def download_voice_permanently(voice_id, complaint_id):
             print("❌ No download URL in response")
             return None
        
-        # Step 2: Download the audio file
         audio_resp = requests.get(download_url, headers=headers, timeout=30)
-       
         if audio_resp.status_code != 200:
             print(f"❌ Failed to download audio: {audio_resp.status_code}")
             return None
        
-        # Step 3: Save permanently
         filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
         filepath = os.path.join(voice_dir, filename)
        
@@ -397,7 +391,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION ───────────────────────────────────────
+# ── BOT REPLY FUNCTION (MODIFIED - ONLY RESPONDS TO TRIGGER WORDS) ──
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -406,13 +400,11 @@ def bot_reply(user_msg, ctx, media_info=None):
    
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}, lang={lang}")
    
+    # Language switching (always allowed)
     if ml == "telugu":
         return MENU_TE, {"state": "idle", "lang": "te"}
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
-   
-    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
     # Handle voice message
     if media_info and media_info.get("type") == "voice":
@@ -424,54 +416,30 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
+    # ──────────────────────────────────────────────────────────
+    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
+    # ──────────────────────────────────────────────────────────
     if state == "idle":
-        if ml == "1":
-            ctx["state"] = "c_name"
-            if lang == "te":
-                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
-            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
-        elif ml == "2":
-            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
-            ctx["state"] = "cert_type"
-            if lang == "te":
-                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
-            return f"📋 Certificate Type:\n{cats}", ctx
-        elif ml == "3":
-            ctx["state"] = "track_id"
-            if lang == "te":
-                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
-            return "🔍 Enter your Reference ID:", ctx
-        elif ml == "4":
-            lines = [f"{n}: {d}" for n, d in SCHEMES]
-            if lang == "te":
-                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "5":
-            rows = active_works()
-            if not rows:
-                if lang == "te":
-                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            lines = [f"• {w['title']}" for w in rows[:5]]
-            if lang == "te":
-                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "6":
-            rows = all_announcements()[:3]
-            if not rows:
-                if lang == "te":
-                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            if lang == "te":
-                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "7":
-            if lang == "te":
-                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
-            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-        else:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        # Define trigger words that start the bot
+        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
+       
+        # Check if message is a trigger word
+        if ml not in trigger_words:
+            # Ignore everything else - NO RESPONSE
+            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+            return None, ctx
+       
+        # Trigger word detected - show menu
+        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
+    # ──────────────────────────────────────────────────────────
+    # ONCE IN ACTIVE STATE, HANDLE ALL OPTIONS (1-7)
+    # ──────────────────────────────────────────────────────────
+    if state == "idle" and ml in ("1", "2", "3", "4", "5", "6", "7"):
+        # This case is already handled above, but keep for safety
+        pass
+   
+    # COMPLAINT FLOW
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -597,6 +565,7 @@ def bot_reply(user_msg, ctx, media_info=None):
         reply += "\n\nType *menu* for main menu"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
    
+    # CERTIFICATE FLOW
     if state == "cert_type":
         if msg not in CERT_TYPES:
             if lang == "te":
@@ -657,6 +626,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
    
+    # TRACK STATUS FLOW
     if state == "track_id":
         if len(msg) < 5:
             if lang == "te":
@@ -678,6 +648,53 @@ def bot_reply(user_msg, ctx, media_info=None):
         if lang == "te":
             return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
         return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+   
+    # If user types 1-7 after menu is shown, handle them
+    if ml in ("1", "2", "3", "4", "5", "6", "7"):
+        if ml == "1":
+            ctx["state"] = "c_name"
+            if lang == "te":
+                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
+            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
+        elif ml == "2":
+            cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
+            ctx["state"] = "cert_type"
+            if lang == "te":
+                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
+            return f"📋 Certificate Type:\n{cats}", ctx
+        elif ml == "3":
+            ctx["state"] = "track_id"
+            if lang == "te":
+                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
+            return "🔍 Enter your Reference ID:", ctx
+        elif ml == "4":
+            lines = [f"{n}: {d}" for n, d in SCHEMES]
+            if lang == "te":
+                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "5":
+            rows = active_works()
+            if not rows:
+                if lang == "te":
+                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            lines = [f"• {w['title']}" for w in rows[:5]]
+            if lang == "te":
+                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "6":
+            rows = all_announcements()[:3]
+            if not rows:
+                if lang == "te":
+                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            if lang == "te":
+                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        elif ml == "7":
+            if lang == "te":
+                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
+            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
@@ -714,7 +731,10 @@ def whatsapp_webhook():
             user_msg = msg["text"]["body"].strip()
             print(f"📝 Text from {sender}: {user_msg}")
             reply, session_data = bot_reply(user_msg, session_data)
-            send_whatsapp_message(sender, reply)
+            if reply is not None:
+                send_whatsapp_message(sender, reply)
+            else:
+                print(f"🔇 No response sent (ignored message)")
        
         elif msg_type == "location":
             lat = msg["location"]["latitude"]
@@ -750,7 +770,8 @@ def whatsapp_webhook():
                 print(f"🎤 Audio/Voice from {sender}: {audio_id}")
                 media_info = {"type": "voice", "url": None, "audio_id": audio_id}
                 reply, session_data = bot_reply("", session_data, media_info)
-                send_whatsapp_message(sender, reply)
+                if reply is not None:
+                    send_whatsapp_message(sender, reply)
             else:
                 if session_data.get("lang", "en") == "te":
                     send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
@@ -1159,7 +1180,7 @@ def add_sarpanch():
    
     return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
-# ── HTML TEMPLATES ────────────────────────────────────────────
+# ── HTML TEMPLATES (Unchanged - Keeping your working templates) ──
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -1331,7 +1352,7 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 </body></html>
 """
 
-# ── UPDATED DASHBOARD HTML WITH REPORTED DATE/TIME COLUMN ────
+# ── DASHBOARD HTML (Your original working version) ──
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <title>{{ village }} Dashboard</title>
@@ -1359,7 +1380,7 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .filter-btn.active{background:var(--green);color:white}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:700px}
+table{width:100%;border-collapse:collapse;min-width:600px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .sortable{cursor:pointer;user-select:none}
@@ -1633,4 +1654,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
+    print(f"🎯 Bot only responds to: hi, hello, start, menu, help (and Telugu equivalents)")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
