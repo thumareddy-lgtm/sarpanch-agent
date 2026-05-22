@@ -390,7 +390,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
-# ── BOT REPLY FUNCTION (FIXED - ONLY RESPONDS TO HI/HELLO) ───
+# ── BOT REPLY FUNCTION (FIXED) ───────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -416,25 +416,9 @@ def bot_reply(user_msg, ctx, media_info=None):
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
     # ──────────────────────────────────────────────────────────
-    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS
+    # FIRST: Handle menu options 1-7 (these are ALWAYS allowed
+    # when the bot is in idle state OR after menu is shown)
     # ──────────────────────────────────────────────────────────
-    if state == "idle":
-        # Define trigger words that show the menu
-        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-        
-        if ml in trigger_words:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-        else:
-            # Ignore all other random messages
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
-   
-    # ──────────────────────────────────────────────────────────
-    # ONCE USER HAS STARTED A FLOW (state is not idle), 
-    # HANDLE ALL INPUTS NORMALLY
-    # ──────────────────────────────────────────────────────────
-   
-    # Handle menu options 1-7 when user is in active state (after menu shown)
     if ml in ("1", "2", "3", "4", "5", "6", "7"):
         if ml == "1":
             ctx["state"] = "c_name"
@@ -481,7 +465,22 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
-    # COMPLAINT FLOW
+    # ──────────────────────────────────────────────────────────
+    # IDLE STATE - ONLY RESPOND TO TRIGGER WORDS (hi, hello, etc.)
+    # Numbers 1-7 are handled above, so they won't be ignored
+    # ──────────────────────────────────────────────────────────
+    if state == "idle":
+        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
+        if ml in trigger_words:
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        else:
+            # Ignore all other random messages when idle
+            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+            return None, ctx
+   
+    # ──────────────────────────────────────────────────────────
+    # COMPLAINT FLOW (continues from states set above)
+    # ──────────────────────────────────────────────────────────
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -1502,11 +1501,15 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table>
+<tr>
 <thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
 <tbody>
 {% for w in works %}
-<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ w.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.title }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.updated }}</td>
 <td class="acts">
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
@@ -1525,12 +1528,24 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+<table class="data-table">
+<thead>
+<tr>
+<th>Title</th>
+<th>Message</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
 {% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td>
+<tr>
+<td style="border:1px solid #ddd;padding:8px"><strong>{{ a.title }}</strong></td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.body }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.date }}</td>
 </tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
 <form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
 <input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
@@ -1541,14 +1556,28 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Name</th>
+<th>Category</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.category }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px"><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
 </tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 <script>
@@ -1656,5 +1685,5 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Bot only responds to: hi, hello, start, menu, help")
+    print(f"🎯 Bot only responds to: hi, hello, start, menu, help (numbers 1-7 work after menu)")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
