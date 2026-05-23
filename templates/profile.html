@@ -23,10 +23,10 @@
       <form method="POST" enctype="multipart/form-data">
         <div class="profile-avatar-sec">
           {% if user and user.photo %}
-            <img src="{{ user.photo }}" class="profile-preview" alt="Profile Photo" style="width: 360px; height: 360px; object-fit: cover; border-radius: 50%; border: 4px solid var(--primary); box-shadow: var(--shadow-md); margin-bottom: 1rem;">
+            <img src="{{ user.photo }}" class="profile-preview" alt="Profile Photo" style="width: 360px; height: 360px; object-fit: cover; border-radius: 12px; border: 4px solid var(--primary); box-shadow: var(--shadow-md); display: block; margin: 0 auto 1.5rem auto;">
           {% else %}
-            <div class="profile-preview" style="width: 360px; height: 360px; border-radius: 50%; border: 4px solid var(--primary); box-shadow: var(--shadow-md); background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
-              <span style="font-size: 4rem;">👤</span>
+            <div class="profile-preview" style="width: 360px; height: 360px; border-radius: 12px; border: 4px solid var(--primary); box-shadow: var(--shadow-md); background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center; margin: 0 auto 1.5rem auto;">
+              <span style="font-size: 5rem;">👤</span>
             </div>
           {% endif %}
           <div class="form-group" style="max-width: 250px; margin: 0 auto 1.5rem auto;">
