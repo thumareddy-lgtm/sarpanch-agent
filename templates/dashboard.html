@@ -60,6 +60,91 @@
         top: 0 !important;
       }
     }
+
+    /* Desktop Table Column visibility optimizations */
+    @media (min-width: 993px) {
+      #complaints-sec table {
+        table-layout: fixed;
+        width: 100%;
+      }
+      
+      #complaints-sec th:nth-child(1), #complaints-sec td:nth-child(1) { width: 8%; }   /* ID */
+      #complaints-sec th:nth-child(2), #complaints-sec td:nth-child(2) { width: 14%; }  /* Citizen */
+      #complaints-sec th:nth-child(3), #complaints-sec td:nth-child(3) { width: 12%; }  /* Category */
+      #complaints-sec th:nth-child(4), #complaints-sec td:nth-child(4) { width: 17%; }  /* Problem Description */
+      #complaints-sec th:nth-child(5), #complaints-sec td:nth-child(5) { width: 12%; }  /* Location */
+      #complaints-sec th:nth-child(6), #complaints-sec td:nth-child(6) { width: 9%; }   /* Priority */
+      #complaints-sec th:nth-child(7), #complaints-sec td:nth-child(7) { width: 11%; }  /* Status */
+      #complaints-sec th:nth-child(8), #complaints-sec td:nth-child(8) { width: 13%; }  /* Reported On */
+      #complaints-sec th:nth-child(9), #complaints-sec td:nth-child(9) { width: 14%; }  /* Actions */
+      
+      #complaints-sec td {
+        padding: 0.75rem 0.4rem !important;
+        font-size: 0.82rem !important;
+        word-break: break-word;
+      }
+      
+      #complaints-sec th {
+        padding: 0.75rem 0.4rem !important;
+        font-size: 0.78rem !important;
+      }
+    }
+
+    /* Mobile Responsive Stacked Card Table */
+    @media (max-width: 768px) {
+      #complaints-sec table, 
+      #complaints-sec thead, 
+      #complaints-sec tbody, 
+      #complaints-sec th, 
+      #complaints-sec td, 
+      #complaints-sec tr {
+        display: block;
+        width: 100%;
+      }
+      
+      #complaints-sec thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+      }
+      
+      #complaints-sec tr {
+        margin: 0 0 1rem 0;
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid var(--border-light);
+        border-radius: var(--radius-md);
+        padding: 0.75rem 1rem;
+        box-shadow: var(--shadow-sm);
+      }
+      
+      #complaints-sec td {
+        border: none;
+        border-bottom: 1px dashed var(--border-light);
+        position: relative;
+        padding: 0.6rem 0.5rem 0.6rem 45% !important;
+        text-align: right !important;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        box-sizing: border-box;
+      }
+      
+      #complaints-sec td:last-child {
+        border-bottom: 0;
+      }
+      
+      #complaints-sec td:before {
+        position: absolute;
+        left: 12px;
+        width: 40%;
+        padding-right: 10px;
+        white-space: nowrap;
+        text-align: left;
+        font-weight: 700;
+        color: var(--text-muted);
+        content: attr(data-label);
+      }
+    }
   </style>
   <script>
     function showHeaderPlaceholder() {
@@ -93,23 +178,23 @@
     
     <!-- Column 1: Sticky Profile Panel (Always Visible on Scroll) -->
     <div class="sticky-sidebar">
-      <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 1.25rem; box-shadow: var(--shadow-md); border-radius: 16px;">
+      <div class="glass-card" style="padding: 1.5rem; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 1.25rem; box-shadow: var(--shadow-md); border-radius: 16px; width: 100%;">
         
-        <!-- Centered 270px Square Avatar in the Sidebar -->
+        <!-- Pushed to Left 270px Square Avatar in the Sidebar -->
         {% if photo %}
-          <img src="{{ photo }}" id="sarpanch-header-img" class="header-avatar" onerror="showHeaderPlaceholder()" alt="Sarpanch Avatar" style="width: 270px; height: 270px; border-radius: 12px; object-fit: cover; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md); transition: var(--transition);">
+          <img src="{{ photo }}" id="sarpanch-header-img" class="header-avatar" onerror="showHeaderPlaceholder()" alt="Sarpanch Avatar" style="width: 270px; height: 270px; border-radius: 12px; object-fit: cover; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md); transition: var(--transition); margin: 0;">
           
-          <div id="sarpanch-header-placeholder" style="display: none; width: 270px; height: 270px; border-radius: 12px; background: hsl(210, 14%, 90%); align-items: center; justify-content: center; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md);">
+          <div id="sarpanch-header-placeholder" style="display: none; width: 270px; height: 270px; border-radius: 12px; background: hsl(210, 14%, 90%); align-items: center; justify-content: center; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md); margin: 0;">
             <span style="font-size: 6rem;">👤</span>
           </div>
         {% else %}
-          <div style="width: 270px; height: 270px; border-radius: 12px; background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md);">
+          <div style="width: 270px; height: 270px; border-radius: 12px; background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md); margin: 0;">
             <span style="font-size: 6rem;">👤</span>
           </div>
         {% endif %}
         
         <!-- Title & Subtitle details -->
-        <div style="text-align: center; width: 100%;">
+        <div style="text-align: left; width: 100%;">
           <h1 style="font-size: 1.8rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.35rem; line-height: 1.2;">{{ village }}</h1>
           <div style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted); line-height: 1.4; border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.75rem;">
             🏛️ {{ username }}<br>
@@ -199,40 +284,40 @@
         <tbody>
           {% for x in filtered_complaints %}
             <tr>
-              <td><span class="ticket-id">{{ x.id }}</span></td>
-              <td>
+              <td data-label="ID"><span class="ticket-id">{{ x.id }}</span></td>
+              <td data-label="Citizen">
                 <span style="font-weight: 600;">{{ x.name }}</span><br>
                 <small style="color: var(--text-muted);">{{ x.phone }}</small>
               </td>
-              <td>{{ x.category }}</td>
-              <td>
+              <td data-label="Category">{{ x.category }}</td>
+              <td data-label="Problem">
                 <div style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem;">
                   {{ x.description }}
                 </div>
               </td>
-              <td>
+              <td data-label="Location">
                 {% if x.maps_link %}
                   <a href="{{ x.maps_link }}" target="_blank" style="color: var(--info); font-weight: 500;">📍 {{ x.location }}</a>
                 {% else %}
                   {{ x.location }}
                 {% endif %}
               </td>
-              <td class="pri-{{ x.priority }}">{{ x.priority|upper }}</td>
-              <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-              <td><small style="font-weight: 500; color: var(--text-muted);">{{ x.filed_at }}</small></td>
-              <td style="text-align: center;">
-                <div class="acts" style="justify-content: center;">
+              <td data-label="Priority" class="pri-{{ x.priority }}">{{ x.priority|upper }}</td>
+              <td data-label="Status"><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+              <td data-label="Reported On"><small style="font-weight: 500; color: var(--text-muted);">{{ x.filed_at }}</small></td>
+              <td data-label="Actions" style="text-align: center; white-space: nowrap; width: 140px;">
+                <div class="acts" style="display: flex; justify-content: center; gap: 0.3rem; flex-wrap: nowrap;">
                   {% if x.status=='pending' %}
-                    <a href="/caction/{{ x.id }}/in_review" class="btn btn-info">Review</a>
+                    <a href="/caction/{{ x.id }}/in_review" class="btn btn-info" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;">Review</a>
                   {% endif %}
                   {% if x.status=='in_review' %}
-                    <a href="/caction/{{ x.id }}/in_progress" class="btn btn-accent">Start</a>
+                    <a href="/caction/{{ x.id }}/in_progress" class="btn btn-accent" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;">Start</a>
                   {% endif %}
                   {% if x.status=='in_progress' %}
-                    <a href="/caction/{{ x.id }}/resolved" class="btn btn-primary">Done</a>
+                    <a href="/caction/{{ x.id }}/resolved" class="btn btn-primary" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;">Done</a>
                   {% endif %}
-                  <a href="/caction/{{ x.id }}/rejected" class="btn btn-danger">X</a>
-                  <a href="/complaint/{{ x.id }}" class="btn btn-neutral">View</a>
+                  <a href="/caction/{{ x.id }}/rejected" class="btn btn-danger" style="padding: 0.35rem 0.6rem; font-size: 0.75rem; font-weight: 700;">X</a>
+                  <a href="/complaint/{{ x.id }}" class="btn btn-neutral" style="padding: 0.35rem 0.6rem; font-size: 0.75rem;">View</a>
                 </div>
               </td>
             </tr>
