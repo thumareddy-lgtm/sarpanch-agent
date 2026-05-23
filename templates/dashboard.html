@@ -364,5 +364,47 @@
       {% endif %}
     </div>
   </div>
+
+  <script>
+    // Smooth auto-scrolling to target elements
+    window.addEventListener('DOMContentLoaded', (event) => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash;
+      
+      // Auto-scroll on filters or hash
+      if (urlParams.has('filter_status') || urlParams.has('filter_priority')) {
+        const el = document.getElementById('complaints-sec');
+        if (el) {
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 300);
+        }
+      } else if (hash) {
+        const el = document.querySelector(hash);
+        if (el) {
+          setTimeout(() => {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 300);
+        }
+      }
+    });
+
+    // Smooth scroll intercept for in-page stats navigation
+    document.querySelectorAll('.stat-card').forEach(card => {
+      card.addEventListener('click', function(e) {
+        const clickAttr = this.getAttribute('onclick');
+        if (clickAttr && clickAttr.includes("href='#")) {
+          const hash = clickAttr.split("'")[1];
+          const el = document.querySelector(hash);
+          if (el) {
+            e.preventDefault();
+            e.stopPropagation();
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            history.pushState(null, null, hash);
+          }
+        }
+      });
+    });
+  </script>
 </body>
 </html>

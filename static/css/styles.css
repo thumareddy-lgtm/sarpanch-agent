@@ -2,21 +2,21 @@
 
 /* --- Modern Styling & CSS Variables --- */
 :root {
-  --primary: hsl(142, 60%, 26%);       /* Rich Forest Green */
-  --primary-light: hsl(142, 50%, 94%); /* Warm Light Sage */
-  --primary-glow: hsla(142, 60%, 26%, 0.15);
+  --primary: hsl(210, 80%, 32%);       /* Deep Royal/Navy Accent */
+  --primary-light: hsl(205, 70%, 93%); /* Soft light blue */
+  --primary-glow: hsla(210, 80%, 32%, 0.15);
   --accent: hsl(28, 90%, 54%);         /* Warm Ochre/Amber */
   --danger: hsl(354, 70%, 54%);        /* Deep Crimson */
   --info: hsl(210, 80%, 48%);          /* Classic Slate Blue */
-  --success: hsl(142, 60%, 26%);
+  --success: hsl(210, 80%, 32%);
   
-  --bg-app: hsl(210, 20%, 98%);        /* Soft Off-White Background */
-  --bg-glass: rgba(255, 255, 255, 0.75);
-  --border-glass: rgba(255, 255, 255, 0.6);
-  --border-light: hsl(210, 14%, 89%);
+  --bg-app: hsl(205, 60%, 92%);        /* Soft Premium Light Blue Page Background */
+  --bg-glass: rgba(255, 255, 255, 0.82);
+  --border-glass: rgba(255, 255, 255, 0.65);
+  --border-light: hsl(205, 30%, 84%);
   
-  --text-main: hsl(210, 24%, 16%);     /* Dark Slate Text */
-  --text-muted: hsl(210, 12%, 46%);    /* Muted Gray Text */
+  --text-main: #000000;                /* Solid High-Contrast Black Text */
+  --text-muted: hsl(210, 15%, 32%);    /* High-contrast Slate Text */
   --text-on-primary: hsl(0, 0%, 100%);
   
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -333,6 +333,16 @@ td {
   font-size: 0.9rem;
   border-block-end: 1px solid var(--border-light);
   vertical-align: middle;
+  color: #000000 !important; /* Force solid black text */
+}
+
+td span, td div, td small {
+  color: #000000 !important; /* Force nested text elements to solid black */
+}
+
+td a {
+  color: #0056b3 !important; /* High contrast deep blue links */
+  font-weight: 600;
 }
 
 tr:hover td {
