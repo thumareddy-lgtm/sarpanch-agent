@@ -405,15 +405,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
-    if state == "idle":
-        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-        
-        if ml in trigger_words:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-        else:
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
-   
+    # FIRST: Handle menu options 1-7 (these should work even when state is idle)
     if ml in ("1", "2", "3", "4", "5", "6", "7"):
         if ml == "1":
             ctx["state"] = "c_name"
@@ -460,6 +452,18 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
    
+    # SECOND: Handle idle state - only for trigger words to show menu
+    if state == "idle":
+        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
+        
+        if ml in trigger_words:
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        else:
+            # Ignore all other random messages when idle
+            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
+            return None, ctx
+   
+    # THIRD: Handle all other states (c_name, c_phone, etc.)
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -1450,16 +1454,18 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📋 Certificate Requests</div>
 {% if pending_certs or processing_certs %}
-</table>
+<table>
 <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in pending_certs %}
 <tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge pending">Pending</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></tr>
+<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
+</tr>
 {% endfor %}
 {% for x in processing_certs %}
 <tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge processing">Processing</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></tr>
+<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
