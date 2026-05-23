@@ -9,10 +9,10 @@
     /* Professional Two-Column Dashboard Layout */
     .dashboard-grid {
       display: grid;
-      grid-template-columns: 320px 1fr;
+      grid-template-columns: 550px 1fr; /* Wider sidebar column to hold horizontal profile card beautifully */
       gap: 2rem;
       align-items: start;
-      max-width: 1500px;
+      max-width: 1600px;
       width: 100%;
       margin: 0 auto;
       padding: 2rem;
@@ -25,6 +25,17 @@
       flex-direction: column;
       gap: 1.5rem;
       z-index: 10;
+    }
+    
+    .profile-sidebar-card {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: row; /* Desktop horizontal card layout: avatar left, text info right */
+      align-items: center;
+      gap: 1.5rem;
+      border-radius: 16px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border-glass);
     }
     
     .dashboard-main {
@@ -49,15 +60,26 @@
       scroll-margin-top: 100px !important;
     }
 
-    @media (max-width: 992px) {
+    @media (max-width: 1200px) {
       .dashboard-grid {
         grid-template-columns: 1fr;
         padding: 1rem;
         gap: 1.5rem;
       }
+      .profile-sidebar-card {
+        flex-direction: row; /* Keep it side-by-side on mid-size tablet screens */
+        align-items: center;
+      }
       .sticky-sidebar {
         position: relative !important;
         top: 0 !important;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .profile-sidebar-card {
+        flex-direction: column; /* Stack vertically on small mobile phone screens */
+        align-items: flex-start;
       }
     }
 
@@ -178,7 +200,7 @@
     
     <!-- Column 1: Sticky Profile Panel (Always Visible on Scroll) -->
     <div class="sticky-sidebar">
-      <div class="glass-card" style="padding: 1.5rem; text-align: left; display: flex; flex-direction: column; align-items: flex-start; gap: 1.25rem; box-shadow: var(--shadow-md); border-radius: 16px; width: 100%;">
+      <div class="glass-card profile-sidebar-card">
         
         <!-- Pushed to Left 270px Square Avatar in the Sidebar -->
         {% if photo %}
@@ -193,12 +215,12 @@
           </div>
         {% endif %}
         
-        <!-- Title & Subtitle details -->
-        <div style="text-align: left; width: 100%;">
-          <h1 style="font-size: 1.8rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.35rem; line-height: 1.2;">{{ village }}</h1>
-          <div style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted); line-height: 1.4; border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.75rem;">
+        <!-- Title & Subtitle details (Beautifully placed side-by-side with photo on desktop!) -->
+        <div style="display: flex; flex-direction: column; gap: 0.5rem; flex: 1;">
+          <h1 style="font-size: 2.2rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.25rem; line-height: 1.1;">{{ village }}</h1>
+          <div style="font-size: 1.05rem; font-weight: 600; color: var(--text-muted); line-height: 1.5; border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.25rem;">
             🏛️ {{ username }}<br>
-            <span style="font-size: 0.85rem; font-weight: 500; opacity: 0.85;">Jangaon Gram Panchayat</span>
+            <span style="font-size: 0.9rem; font-weight: 500; opacity: 0.85;">Jangaon Gram Panchayat</span>
           </div>
         </div>
         
@@ -543,20 +565,10 @@
   </div> <!-- Close Two-Column Grid (.dashboard-grid) -->
 
   <script>
-    // Smooth auto-scrolling to target elements
+    // Smooth auto-scrolling to target elements (Only on explicit hashtag jumps, not on simple page loads/refreshes)
     window.addEventListener('DOMContentLoaded', (event) => {
-      const urlParams = new URLSearchParams(window.location.search);
       const hash = window.location.hash;
-      
-      // Auto-scroll on filters or hash
-      if (urlParams.has('filter_status') || urlParams.has('filter_priority')) {
-        const el = document.getElementById('complaints-sec');
-        if (el) {
-          setTimeout(() => {
-            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 300);
-        }
-      } else if (hash) {
+      if (hash) {
         const el = document.querySelector(hash);
         if (el) {
           setTimeout(() => {
