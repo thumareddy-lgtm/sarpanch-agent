@@ -424,52 +424,43 @@ def send_whatsapp_message(to_number, message):
         return False
 
 # ── Menus and Constants ──────────────────────────────────────
-MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
-    "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
-    "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
-    "📍 You can share your location or 🎤 send voice message\n"
-    "తెలుగు కావాలంటే *telugu* టైప్ చేయండి.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+WELCOME_MENU = (
+    "Welcome to Kolukonda Gram Panchayat Portal! 🙏\n"
+    "[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం!]\n\n"
+    "1. Register Complaint [Telugu: ఫిర్యాదు నమోదు]\n"
+    "2. Request Certificate [Telugu: ధృవీకరణ పత్రం కొరకు]\n"
+    "3. Check Status [Telugu: స్థితిని తనిఖీ చేయండి]\n"
+    "4. View Schemes [Telugu: పథకాలను వీక్షించండి]\n"
+    "5. Contact Ward [Telugu: వార్డు సంప్రదించండి]"
+)
 
-MENU_TE = ("నమస్కారం! *{v}* గ్రామ పంచాయతీకి స్వాగతం\nసర్పంచ్: *{s}*\n\n"
-    "1️⃣ ఫిర్యాదు నమోదు చేయండి\n2️⃣ సర్టిఫికెట్ అభ్యర్థించండి\n3️⃣ ఫిర్యాదు స్థితి తెలుసుకోండి\n"
-    "4️⃣ ప్రభుత్వ పథకాలు\n5️⃣ అభివృద్ధి పనులు\n6️⃣ ప్రకటనలు\n7️⃣ కార్యాలయ సమాచారం\n\n"
-    "📍 మీ లొకేషన్ షేర్ చేయండి లేదా 🎤 వాయిస్ మెసేజ్ పంపండి\n"
-    "For English type *english*").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+MENU_EN = WELCOME_MENU
+MENU_TE = WELCOME_MENU
 
-COMPLAINT_CATS = {"1":"Road / Pothole","2":"Water Supply","3":"Electricity","4":"Drainage","5":"Ration Shop","6":"Land Dispute","7":"Other"}
-CERT_TYPES = {"1":"Income Certificate","2":"Caste Certificate","3":"Residence Certificate","4":"Birth Certificate","5":"Death Certificate","6":"Agriculture Land Certificate"}
+COMPLAINT_CATS = {
+    "1": "Road / Pothole [రోడ్లు / గుంతలు]",
+    "2": "Water Supply [నీటి సరఫరా]",
+    "3": "Electricity [విద్యుత్ సమస్య]",
+    "4": "Drainage [డ్రైనేజీ]",
+    "5": "Ration Shop [రేషన్ షాప్]",
+    "6": "Land Dispute [భూ వివాదాలు]",
+    "7": "Other [ఇతరములు]"
+}
 
-# Updated Government Schemes with Telugu and Congress schemes
-SCHEMES_EN = [
-    ("Mahalakshmi Scheme", "₹2500/month financial assistance to women heads of families"),
-    ("Gruha Jyothi", "200 units free electricity for eligible households"),
-    ("Anna Bhagya", "10kg free rice per person per month for BPL families"),
-    ("YSR Rythu Bharosa", "₹13,500/acre annual investment support for farmers"),
-    ("YSR Aasara", "Financial assistance to women self-help groups"),
-    ("PM Kisan", "₹6000/year for farmers"),
-    ("Aarogyasri", "Free medical up to ₹5L/year"),
-    ("Rythu Bandhu", "₹5000/acre/season for farmers")
-]
-
-SCHEMES_TE = [
-    ("మహాలక్ష్మి పథకం", "మహిళా కుటుంబ అధినేతలకు నెలకు ₹2500 ఆర్థిక సహాయం"),
-    ("గృహజ్యోతి", "అర్హులైన కుటుంబాలకు 200 యూనిట్ల ఉచిత విద్యుత్"),
-    ("అన్నభాగ్య", "బీపీఎల్ కుటుంబాలకు ప్రతి వ్యక్తికి నెలకు 10 కేజీల ఉచిత బియ్యం"),
-    ("వైఎస్ఆర్ రైతు భరోసా", "రైతులకు ఎకరానికి ₹13,500 వార్షిక పెట్టుబడి సహాయం"),
-    ("వైఎస్ఆర్ ఆసరా", "మహిళా స్వయం సహాయక బృందాలకు ఆర్థిక సహాయం"),
-    ("పీఎం కిసాన్", "రైతులకు సంవత్సరానికి ₹6000"),
-    ("ఆరోగ్యశ్రీ", "సంవత్సరానికి ₹5 లక్షల వరకు ఉచిత వైద్యం"),
-    ("రైతు బంధు", "రైతులకు ఎకరానికి ₹5000/సీజన్")
-]
+CERT_TYPES = {
+    "1": "Income Certificate [ఆదాయ ధృవీకరణ పత్రం]",
+    "2": "Caste Certificate [కుల ధృవీకరణ పత్రం]",
+    "3": "Residence Certificate [నివాస ధృవీకరణ పత్రం]",
+    "4": "Birth Certificate [జనన ధృవీకరణ పత్రం]",
+    "5": "Death Certificate [మరణ ధృవీకరణ పత్రం]",
+    "6": "Agriculture Land Certificate [వ్యవసాయ భూమి ధృవీకరణ పత్రం]"
+}
 
 STATUS_MAP = {"pending":"Pending","in_review":"In Review","in_progress":"In Progress","resolved":"Resolved","rejected":"Rejected","ready":"Ready to Collect","processing":"Processing"}
 PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
 def get_menu(ctx):
-    return MENU_TE if ctx.get("lang")=="te" else MENU_EN
-
-def get_schemes(lang):
-    return SCHEMES_TE if lang == "te" else SCHEMES_EN
+    return WELCOME_MENU
 
 # ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
@@ -480,120 +471,78 @@ def bot_reply(user_msg, ctx, media_info=None):
    
     print(f"🔍 DEBUG: state={state}, msg={msg[:30] if msg else 'empty'}, lang={lang}")
    
-    if ml == "telugu":
-        return MENU_TE, {"state": "idle", "lang": "te"}
-    if ml == "english":
-        return MENU_EN, {"state": "idle", "lang": "en"}
-   
-    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    if ml in ("menu", "home", "back", "hi", "hello", "start", "help", "telugu", "english"):
+        return WELCOME_MENU, {"state": "idle", "lang": lang}
    
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
         ctx["temp_audio_id"] = media_info.get("audio_id", "")
         ctx["state"] = "waiting_for_location"
-        if lang == "te":
-            return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
-        return "🎤 Voice received! Please share your location (📎 → Location):", ctx
+        return "🎤 *Voice received [వాయిస్ మెసేజ్ అందుకుంది]*!\n\n📍 Please share your location (📎 → Location) or type your village name [దయచేసి మీ లొకేషన్ షేర్ చేయండి లేదా మీ గ్రామం పేరు టైప్ చేయండి]:", ctx
    
     if state == "idle":
         if ml == "1":
             ctx["state"] = "c_name"
-            if lang == "te":
-                return "📝 ఫిర్యాదు నమోదు\n\nమీ పూర్తి పేరు టైప్ చేయండి:", ctx
-            return "📝 Enter your full name:", {"state": "c_name", "lang": lang}
+            return "📝 *Register Complaint [ఫిర్యాదు నమోదు]*\n\nPlease enter your full name [దయచేసి మీ పూర్తి పేరు టైప్ చేయండి]:", ctx
         elif ml == "2":
             cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
             ctx["state"] = "cert_type"
-            if lang == "te":
-                return f"📋 సర్టిఫికెట్ రకం:\n{cats}", ctx
-            return f"📋 Certificate Type:\n{cats}", ctx
+            return f"📋 *Select Certificate Type [ధృవీకరణ పత్రం రకం ఎంచుకోండి]*:\n\n{cats}", ctx
         elif ml == "3":
             ctx["state"] = "track_id"
-            if lang == "te":
-                return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
-            return "🔍 Enter your Reference ID:", ctx
+            return "🔍 *Check Status [స్థితిని తనిఖీ చేయండి]*\n\nPlease enter your Reference ID (e.g., CMP-XXXXX or CERT-XXXXX) [దయచేసి మీ రిఫరెన్స్ ID టైప్ చేయండి]:", ctx
         elif ml == "4":
-            schemes = get_schemes(lang)
-            lines = [f"• {n}: {d}" for n, d in schemes]
-            if lang == "te":
-                return "📋 ప్రభుత్వ పథకాలు (కాంగ్రెస్ సర్కార్)\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📋 Government Schemes (Congress Government)\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            schemes_list = [
+                "• *Mahalakshmi Scheme [మహాలక్ష్మి పథకం]*: ₹2500/month financial assistance to women [మహిళా కుటుంబ అధినేతలకు నెలకు ₹2500 ఆర్థిక సహాయం]",
+                "• *Gruha Jyothi [గృహజ్యోతి]*: 200 units free electricity [అర్హులైన కుటుంబాలకు 200 యూనిట్ల ఉచిత విద్యుత్]",
+                "• *Anna Bhagya [అన్నభాగ్య]*: 10kg free rice for BPL families [బీపీఎల్ కుటుంబాలకు ప్రతి వ్యక్తికి నెలకు 10 కేజీల ఉచిత బియ్యం]",
+                "• *Rythu Bharosa [రైతు భరోసా]*: ₹13,500/acre annual investment support [రైతులకు ఎకరానికి ₹13,500 వార్షిక పెట్టుబడి సహాయం]",
+                "• *Aarogyasri [ఆరోగ్యశ్రీ]*: Free medical up to ₹5L/year [సంవత్సరానికి ₹5 లక్షల వరకు ఉచిత వైద్యం]"
+            ]
+            schemes_text = "\n\n".join(schemes_list)
+            return f"📋 *Government Schemes [ప్రభుత్వ పథకాలు]*:\n\n{schemes_text}\n\nType *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]", {"state": "idle", "lang": lang}
         elif ml == "5":
-            rows = active_works()
-            if not rows:
-                if lang == "te":
-                    return "🛠️ ప్రస్తుతం పనులు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "🛠️ No active works.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            lines = [f"• {w['title']}" for w in rows[:5]]
-            if lang == "te":
-                return "🛠️ అభివృద్ధి పనులు:\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "🛠️ Development Works:\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "6":
-            rows = all_announcements()[:3]
-            if not rows:
-                if lang == "te":
-                    return "📢 ప్రకటనలు లేవు.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-                return "📢 No announcements.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-            if lang == "te":
-                return "📢 ప్రకటనలు:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📢 Announcements:\n" + "\n".join([f"• {a['title']}: {a['body']}" for a in rows]) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
-        elif ml == "7":
-            if lang == "te":
-                return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
-            return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
+            return (
+                "📞 *Ward & Gram Panchayat Contacts [వార్డు & గ్రామ పంచాయతీ సంప్రదింపులు]*:\n\n"
+                "• *Sarpanch [సర్పంచ్]*: Kothi Sravanthi Praveen (+91 95001 78059)\n"
+                "• *Ward Member Office [వార్డు సభ్యుల కార్యాలయం]*: +91 99999 88888\n"
+                "• *MRO Office (Jangaon) [MRO కార్యాలయం (జనగామ)]*: +91 94910 22334\n\n"
+                "Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]."
+            ), {"state": "idle", "lang": lang}
         else:
-            if ml in ("hi", "hello", "start", "help"):
-                return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
-            else:
-                print(f"🚫 Ignoring non-trigger message: {msg}")
-                return None, ctx
+            print(f"🚫 Ignoring non-trigger message: {msg}")
+            return None, ctx
    
     if state == "c_name":
         if len(msg) < 2:
-            if lang == "te":
-                return "దయచేసి సరైన పేరు టైప్ చేయండి (కనీసం 2 అక్షరాలు):", ctx
-            return "Please enter valid name (min 2 chars):", ctx
+            return "❌ Please enter a valid name (min 2 chars) [దయచేసి కనీసం 2 అక్షరాల సరైన పేరు టైప్ చేయండి]:", ctx
         ctx["c_name"] = msg.title()
         ctx["state"] = "c_phone"
-        if lang == "te":
-            return f"నమస్కారం {ctx['c_name']}!\n\nమొబైల్ నంబర్ (10 అంకెలు):", ctx
-        return f"Hello {ctx['c_name']}!\n\nMobile number (10 digits):", ctx
+        return f"👋 Namaskaram *{ctx['c_name']}*!\n\nEnter your 10-digit mobile number [మీ 10 అంకెల మొబైల్ నంబర్ టైప్ చేయండి]:", ctx
    
     if state == "c_phone":
-        if not (msg.isdigit() and len(msg) >= 10):
-            if lang == "te":
-                return "దయచేసి సరైన 10-అంకెల మొబైల్ నంబర్ టైప్ చేయండి:", ctx
-            return "Please enter 10-digit number:", ctx
-        ctx["c_phone"] = msg
+        clean_num = re.sub(r"\D", "", msg)
+        if len(clean_num) < 10:
+            return "❌ Please enter a valid 10-digit mobile number [దయచేసి సరైన 10 అంకెల మొబైల్ నంబర్ టైప్ చేయండి]:", ctx
+        ctx["c_phone"] = clean_num
         ctx["state"] = "c_cat"
         cats = "\n".join(f"{k}. {v}" for k, v in COMPLAINT_CATS.items())
-        if lang == "te":
-            return f"📂 వర్గం ఎంచుకోండి:\n{cats}", ctx
-        return f"📂 Select complaint category:\n{cats}", ctx
+        return f"📂 *Select Complaint Category [ఫిర్యాదు వర్గాన్ని ఎంచుకోండి]*:\n\n{cats}", ctx
    
     if state == "c_cat":
         if msg not in COMPLAINT_CATS:
-            if lang == "te":
-                return "దయచేసి 1-7 మధ్య సంఖ్య ఎంచుకోండి:", ctx
-            return "Please choose 1-7:", ctx
+            return "❌ Please select a number between 1 and 7 [దయచేసి 1 నుండి 7 మధ్య సంఖ్యను ఎంచుకోండి]:", ctx
         ctx["c_cat"] = COMPLAINT_CATS[msg]
         ctx["state"] = "c_desc"
-        if lang == "te":
-            return f"📝 వర్గం: {ctx['c_cat']}\n\nసమస్య వివరించండి:", ctx
-        return f"📝 Category: {ctx['c_cat']}\n\nDescribe the problem:", ctx
+        return f"📝 *Category [వర్గం]*: {ctx['c_cat']}\n\nDescribe your problem [మీ समस्याను వివరించండి]:", ctx
    
     if state == "c_desc":
         if len(msg) < 5:
-            if lang == "te":
-                return "దయచేసి మరింత వివరంగా టైప్ చేయండి (కనీసం 5 అక్షరాలు):", ctx
-            return "More details please (min 5 chars):", ctx
+            return "❌ Please provide more details (min 5 characters) [దయచేసి సమస్యను వివరంగా వివరించండి (కనీసం 5 అక్షరాలు)]:", ctx
         ctx["c_desc"] = msg
         ctx["state"] = "waiting_for_location"
-        if lang == "te":
-            return "📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location) లేదా ఊరి పేరు టైప్ చేయండి:", ctx
-        return "📍 Share your location (📎 → Location) or type village name:", ctx
+        return "📍 *Location [లొకేషన్]*\n\nPlease share your location (📎 → Location) or type your village name [దయచేసి మీ లొకేషన్ షేర్ చేయండి లేదా మీ గ్రామం పేరు టైప్ చేయండి]:", ctx
    
     if state == "waiting_for_location":
         detected_village = detect_village_from_text(msg)
@@ -607,9 +556,13 @@ def bot_reply(user_msg, ctx, media_info=None):
             print(f"📍 Village from GPS: {ctx.get('village')}")
        
         ctx["state"] = "c_pri"
-        if lang == "te":
-            return "⚡ ఎంత అత్యవసరం?\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ", ctx
-        return "⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High", ctx
+        return (
+            "⚡ *How urgent? [ఎంత అత్యవసరం?]*\n\n"
+            "1. Low [తక్కువ]\n"
+            "2. Medium [మధ్యస్థం]\n"
+            "3. High [ఎక్కువ]\n\n"
+            "Please select 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:"
+        ), ctx
    
     if state == "c_pri":
         print(f"🔍 c_pri received: msg={msg}")
@@ -617,9 +570,7 @@ def bot_reply(user_msg, ctx, media_info=None):
        
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
-            if lang == "te":
-                return "⚡ దయచేసి 1, 2, లేదా 3 టైప్ చేయండి:", ctx
-            return "⚡ Please reply with 1, 2, or 3:", ctx
+            return "⚡ Please reply with 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:", ctx
        
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
@@ -663,66 +614,54 @@ def bot_reply(user_msg, ctx, media_info=None):
         print(f"🔍 Saving complaint: {rec}")
         insert_complaint(rec)
        
-        if lang == "te":
-            reply = f"✅ *ఫిర్యాదు నమోదు చేయబడింది!*\n\n📋 టిక్కెట్ ID: {ref}\n👤 పేరు: {rec['name']}\n📂 వర్గం: {rec['category']}\n📍 లొకేషన్: {rec['location']}\n⚡ ప్రాధాన్యత: {PRI_MAP[rec['priority']]}\n📅 తేదీ: {rec['filed_at']}"
-        else:
-            reply = f"✅ *Complaint Registered!*\n\n📋 Ticket ID: {ref}\n👤 Name: {rec['name']}\n📂 Category: {rec['category']}\n📍 Location: {rec['location']}\n⚡ Priority: {PRI_MAP[rec['priority']]}\n📅 Date: {rec['filed_at']}"
+        reply = (
+            f"✅ *Complaint Registered [ఫిర్యాదు నమోదు చేయబడింది]*!\n\n"
+            f"📋 Ticket ID: {ref}\n"
+            f"👤 Name [పేరు]: {rec['name']}\n"
+            f"📂 Category [వర్గం]: {rec['category']}\n"
+            f"📍 Location [లొకేషన్]: {rec['location']}\n"
+            f"⚡ Priority [ప్రాధాన్యత]: {PRI_MAP[rec['priority']]} [{ 'తక్కువ' if rec['priority']=='low' else 'మధ్యస్థం' if rec['priority']=='medium' else 'ఎక్కువ' }]\n"
+            f"📅 Date [తేదీ]: {rec['filed_at']}"
+        )
        
         if maps_link:
             reply += f"\n🗺️ Map: {maps_link}"
        
-        reply += "\n\nType *menu* for main menu"
+        reply += "\n\nType *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
         return reply, {"state": "idle", "lang": ctx.get("lang", "en")}
    
     if state == "cert_type":
         if msg not in CERT_TYPES:
-            if lang == "te":
-                return "దయచేసి 1-6 మధ్య సంఖ్య ఎంచుకోండి:", ctx
-            return "Choose 1-6:", ctx
+            return "❌ Please select a number between 1 and 6 [దయచేసి 1 నుండి 6 మధ్య సంఖ్యను ఎంచుకోండి]:", ctx
         ctx["cert_type"] = CERT_TYPES[msg]
         ctx["state"] = "cert_name"
-        if lang == "te":
-            return "📄 అప్లికెంట్ పూర్తి పేరు:", ctx
-        return "📄 Applicant full name:", ctx
+        return "📄 *Applicant Full Name [అప్లికెంట్ పూర్తి పేరు]*\n\nPlease enter applicant's full name [దయచేసి దరఖాస్తుదారుడి పూర్తి పేరు టైప్ చేయండి]:", ctx
    
     if state == "cert_name":
         if len(msg) < 2:
-            if lang == "te":
-                return "దయచేసి సరైన పేరు టైప్ చేయండి:", ctx
-            return "Please enter valid name:", ctx
+            return "❌ Please enter a valid name (min 2 chars) [దయచేసి సరైన పేరు టైప్ చేయండి]:", ctx
         ctx["cert_name"] = msg.title()
         ctx["state"] = "cert_father"
-        if lang == "te":
-            return "👨 తండ్రి/భర్త పేరు:", ctx
-        return "👨 Father's/Husband's name:", ctx
+        return "👨 *Father's/Husband's Name [తండ్రి/భర్త పేరు]*\n\nPlease enter Father's or Husband's name [దయచేసి తండ్రి లేదా భర్త పేరు టైప్ చేయండి]:", ctx
    
     if state == "cert_father":
         if len(msg) < 2:
-            if lang == "te":
-                return "దయచేసి సరైన పేరు టైప్ చేయండి:", ctx
-            return "Please enter valid name:", ctx
+            return "❌ Please enter a valid name [దయచేసి సరైన పేరు టైప్ చేయండి]:", ctx
         ctx["cert_father"] = msg.title()
         ctx["state"] = "cert_phone"
-        if lang == "te":
-            return "📱 మొబైల్ నంబర్ (10 అంకెలు):", ctx
-        return "📱 Mobile number (10 digits):", ctx
+        return "📱 *Mobile Number [మొబైల్ నంబర్]*\n\nPlease enter 10-digit mobile number [దయచేసి 10 అంకెల మొబైల్ నంబర్ టైప్ చేయండి]:", ctx
    
     if state == "cert_phone":
-        if not (msg.isdigit() and len(msg) >= 10):
-            if lang == "te":
-                return "దయచేసి సరైన 10-అంకెల మొబైల్ నంబర్ టైప్ చేయండి:", ctx
-            return "Enter 10-digit number:", ctx
-        ctx["cert_phone"] = msg
+        clean_num = re.sub(r"\D", "", msg)
+        if len(clean_num) < 10:
+            return "❌ Please enter a valid 10-digit mobile number [దయచేసి 10 అంకెల మొబైల్ నంబర్ టైప్ చేయండి]:", ctx
+        ctx["cert_phone"] = clean_num
         ctx["state"] = "cert_purpose"
-        if lang == "te":
-            return "📝 ప్రయోజనం (ఉదా: బ్యాంక్ లోన్, కళాశాల ప్రవేశం):", ctx
-        return "📝 Purpose (e.g., Bank loan, College admission):", ctx
+        return "📝 *Purpose [ప్రయోజనం]*\n\nPlease enter the purpose of certificate (e.g. Bank Loan, College Admission) [దయచేసి ధృవీకరణ పత్రం యొక్క ప్రయోజనాన్ని టైప్ చేయండి]:", ctx
    
     if state == "cert_purpose":
         if len(msg) < 3:
-            if lang == "te":
-                return "దయచేసి ప్రయోజనం టైప్ చేయండి:", ctx
-            return "Please provide purpose:", ctx
+            return "❌ Please enter a valid purpose [దయచేసి ప్రయోజనాన్ని టైప్ చేయండి]:", ctx
         ref = new_id("CERT-")
         rec = {
             "id": ref, "type": ctx["cert_type"], "name": ctx["cert_name"],
@@ -730,33 +669,53 @@ def bot_reply(user_msg, ctx, media_info=None):
             "purpose": msg, "filed_at": now_str()
         }
         insert_certificate(rec)
-        if lang == "te":
-            return f"✅ *సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది!*\n\n📋 ID: {ref}\n👤 పేరు: {rec['name']}\n📄 రకం: {rec['type']}\n\nప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-        return f"✅ *Certificate Request Submitted!*\n\n📋 ID: {ref}\n👤 Name: {rec['name']}\n📄 Type: {rec['type']}\n\nProcessing takes 5-7 days.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        return (
+            f"✅ *Certificate Request Submitted [సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది]*!\n\n"
+            f"📋 ID: {ref}\n"
+            f"👤 Name [పేరు]: {rec['name']}\n"
+            f"📄 Type [రకం]: {rec['type']}\n\n"
+            f"Processing takes 5-7 days [ప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది].\n\n"
+            f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
+        ), {"state": "idle", "lang": lang}
    
     if state == "track_id":
         if len(msg) < 5:
-            if lang == "te":
-                return "దయచేసి సరైన రిఫరెన్స్ ID టైప్ చేయండి (ఉదా: CMP-XXXXX):", ctx
-            return "Please enter valid Reference ID (e.g., CMP-XXXXX):", ctx
+            return "❌ Please enter a valid Reference ID (e.g., CMP-XXXXX) [దయచేసి సరైన రిఫరెన్స్ ID టైప్ చేయండి]:", ctx
         ref = msg.upper().strip()
         rec = get_record(ref)
         if not rec:
-            if lang == "te":
-                return f"❌ ID {ref} కనుగొనబడలేదు.\n\nదయచేసి సరైన ID టైప్ చేయండి.\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return f"❌ ID {ref} not found.\n\nPlease check and try again.\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+            return f"❌ ID *{ref}* not found [కనుగొనబడలేదు].\n\nPlease check and try again [దయచేసి సరైన ID టైప్ చేయండి].\n\nType *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]", {"state": "idle", "lang": lang}
        
         st = STATUS_MAP.get(rec.get("status", ""), rec.get("status", ""))
-        if ref.startswith("CMP"):
-            if lang == "te":
-                return f"🔍 *ఫిర్యాదు స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📂 వర్గం: {rec.get('category', '')}\n📍 లొకేషన్: {rec.get('location', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return f"🔍 *Complaint Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📂 Category: {rec.get('category', '')}\n📍 Location: {rec.get('location', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        status_te = {
+            "Pending": "పెండింగ్", "In Review": "సమీక్షలో ఉంది", "In Progress": "ప్రక్రియలో ఉంది",
+            "Resolved": "పరిష్కరించబడింది", "Rejected": "తిరస్కరించబడింది", "Ready to Collect": "సేకరణకు సిద్ధంగా ఉంది",
+            "Processing": "ప్రాసెసింగ్"
+        }.get(st, st)
        
-        if lang == "te":
-            return f"🔍 *సర్టిఫికెట్ స్థితి*\n\n📋 ID: {ref}\n👤 పేరు: {rec.get('name', '')}\n📄 రకం: {rec.get('type', '')}\n📌 స్థితి: {st}\n📅 నమోదు: {rec.get('filed_at', '')}\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-        return f"🔍 *Certificate Status*\n\n📋 ID: {ref}\n👤 Name: {rec.get('name', '')}\n📄 Type: {rec.get('type', '')}\n📌 Status: {st}\n📅 Filed: {rec.get('filed_at', '')}\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+        if ref.startswith("CMP"):
+            return (
+                f"🔍 *Complaint Status [ఫిర్యాదు స్థితి]*\n\n"
+                f"📋 Ticket ID: {ref}\n"
+                f"👤 Name [పేరు]: {rec.get('name', '')}\n"
+                f"📂 Category [వర్గం]: {rec.get('category', '')}\n"
+                f"📍 Location [లొకేషన్]: {rec.get('location', '')}\n"
+                f"📌 Status [స్థితి]: {st} [{status_te}]\n"
+                f"📅 Filed [నమోదు]: {rec.get('filed_at', '')}\n\n"
+                f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
+            ), {"state": "idle", "lang": lang}
+        else:
+            return (
+                f"🔍 *Certificate Status [సర్టిఫికెట్ స్థితి]*\n\n"
+                f"📋 Request ID: {ref}\n"
+                f"👤 Name [పేరు]: {rec.get('name', '')}\n"
+                f"📄 Type [రకం]: {rec.get('type', '')}\n"
+                f"📌 Status [స్థితి]: {st} [{status_te}]\n"
+                f"📅 Filed [నమోదు]: {rec.get('filed_at', '')}\n\n"
+                f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
+            ), {"state": "idle", "lang": lang}
    
-    return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+    return WELCOME_MENU, {"state": "idle", "lang": lang}
 
 # ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
@@ -811,17 +770,22 @@ def whatsapp_webhook():
             session_data["village"] = detected_village
             if session_data.get("state") == "waiting_for_location":
                 session_data["state"] = "c_pri"
-                lang = session_data.get("lang", "en")
-                if lang == "te":
-                    reply = f"📍 లొకేషన్ అందుకుంది!\n\nగ్రామం: {detected_village}\n\n⚡ ఎంత అత్యవసరం?\n1️⃣ తక్కువ\n2️⃣ మధ్యస్థం\n3️⃣ ఎక్కువ"
-                else:
-                    reply = f"📍 Location received!\n\nVillage: {detected_village}\n\n⚡ How urgent?\n1️⃣ Low\n2️⃣ Medium\n3️⃣ High"
+                reply = (
+                    f"📍 *Location Received [లొకేషన్ అందుకుంది]*!\n"
+                    f"Village [గ్రామం]: *{detected_village}*\n\n"
+                    f"⚡ *How urgent? [ఎంత అత్యవసరం?]*\n"
+                    f"1. Low [తక్కువ]\n"
+                    f"2. Medium [మధ్యస్థం]\n"
+                    f"3. High [ఎక్కువ]\n\n"
+                    f"Please select 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:"
+                )
                 send_whatsapp_message(sender, reply)
             else:
-                if session_data.get("lang", "en") == "te":
-                    reply = f"📍 లొకేషన్ అందుకుంది!\n\nగ్రామం: {detected_village}\n\nమీ ఫిర్యాదును కొనసాగించండి"
-                else:
-                    reply = f"📍 Location received!\n\nVillage: {detected_village}\n\nContinue with your complaint"
+                reply = (
+                    f"📍 *Location Received [లొకేషన్ అందుకుంది]*!\n"
+                    f"Village [గ్రామం]: *{detected_village}*\n\n"
+                    f"Please continue with your request [దయచేసి మీ అభ్యర్థనను కొనసాగించండి]."
+                )
                 send_whatsapp_message(sender, reply)
        
         elif msg_type == "audio" or msg_type == "voice":

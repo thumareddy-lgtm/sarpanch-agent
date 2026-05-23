@@ -5,225 +5,927 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>WhatsApp Chatbot Simulator</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    /* Specific styling for WhatsApp Simulator */
-    .chat-layout {
-      display: grid;
-      grid-template-columns: 350px 1fr;
-      height: calc(100vh - 84px);
-      background: #efeae2;
+    /* Premium WhatsApp Hybrid Theme */
+    body {
+      font-family: 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #f0f2f5;
+      overflow: hidden;
     }
-    
-    .chat-sidebar {
-      background: white;
-      border-right: 1px solid var(--border-light);
+
+    .app-container {
       display: flex;
       flex-direction: column;
+      height: 100vh;
+      width: 100vw;
     }
-    
-    .chat-user-profile {
-      background: hsl(210, 14%, 96%);
-      padding: 1rem;
+
+    /* Top bar */
+    .top-nav {
+      background: linear-gradient(135deg, hsl(142, 60%, 18%), hsl(142, 60%, 10%));
+      color: white;
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      z-index: 10;
+      height: 60px;
+      box-sizing: border-box;
+    }
+
+    .top-nav h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .top-nav a {
+      color: white;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.1);
+      transition: background 0.3s;
+    }
+
+    .top-nav a:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    /* Chat Layout */
+    .chat-layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      height: calc(100vh - 60px);
+      width: 100%;
+      background: #efeae2;
+    }
+
+    /* Left Sidebar: WhatsApp Dark Mode Chat List */
+    .chat-sidebar {
+      background: #111b21;
+      border-right: 1px solid #222d34;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    /* Sidebar Top Profile Section */
+    .sidebar-header {
+      background: #202c33;
+      padding: 0.75rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+      box-sizing: border-box;
+    }
+
+    .sidebar-header-left {
       display: flex;
       align-items: center;
       gap: 0.75rem;
-      border-bottom: 1px solid var(--border-light);
     }
-    
+
+    .wa-logo-container {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #25d366;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    .wa-logo-container svg {
+      width: 22px;
+      height: 22px;
+      fill: white;
+    }
+
+    .sidebar-header-right {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      color: #aebac1;
+    }
+
+    .sidebar-header-right svg {
+      cursor: pointer;
+      width: 20px;
+      height: 20px;
+      transition: color 0.2s;
+    }
+
+    .sidebar-header-right svg:hover {
+      color: #e9edef;
+    }
+
+    /* Search bar section */
+    .sidebar-search {
+      background: #111b21;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #222d34;
+    }
+
+    .search-input-wrapper {
+      background: #202c33;
+      border-radius: 8px;
+      padding: 0.4rem 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .search-input-wrapper svg {
+      width: 16px;
+      height: 16px;
+      fill: #8696a0;
+    }
+
+    .search-input-wrapper input {
+      background: transparent;
+      border: none;
+      color: #e9edef;
+      font-size: 0.85rem;
+      width: 100%;
+      outline: none;
+    }
+
+    .search-input-wrapper input::placeholder {
+      color: #8696a0;
+    }
+
+    /* Chat List */
     .chat-list {
       flex: 1;
       overflow-y: auto;
     }
-    
+
+    .chat-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .chat-list::-webkit-scrollbar-thumb {
+      background-color: #374248;
+      border-radius: 3px;
+    }
+
     .chat-list-item {
-      padding: 1rem;
+      padding: 0.75rem 1rem;
       display: flex;
       align-items: center;
-      gap: 0.75rem;
-      border-bottom: 1px solid var(--border-light);
+      gap: 0.85rem;
+      border-bottom: 1px solid #222d34;
       cursor: pointer;
-      background: hsl(142, 50%, 97%);
+      background: #111b21;
+      position: relative;
+      transition: background 0.2s;
+      height: 72px;
+      box-sizing: border-box;
     }
-    
+
+    .chat-list-item:hover {
+      background: #202c33;
+    }
+
+    .chat-list-item.active {
+      background: #2a3942;
+    }
+
+    .chat-list-item.active::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      background: #00a884;
+    }
+
+    /* Avatars styling */
+    .avatar {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    /* Specific customized avatars matching image */
+    .avatar-bot {
+      background: #d4edda;
+      border: 1.5px solid #28a745;
+    }
+    .avatar-bot img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .avatar-suresh {
+      background: #ffe4e1;
+    }
+
+    .avatar-mro {
+      background: #fff8dc;
+      color: #b8860b;
+      font-size: 1.2rem;
+    }
+
+    .avatar-anjali {
+      background: #ffe4e1;
+    }
+
+    .avatar-water {
+      background: #e0f7fa;
+      color: #00acc1;
+      font-size: 1.2rem;
+    }
+
+    .avatar-news {
+      background: #f1f8e9;
+      color: #7cb342;
+      font-size: 1.2rem;
+    }
+
+    .chat-item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .chat-item-title-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.15rem;
+    }
+
+    .chat-item-title {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #e9edef;
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .chat-item-time {
+      font-size: 0.72rem;
+      color: #8696a0;
+    }
+
+    .chat-item-sub {
+      font-size: 0.82rem;
+      color: #8696a0;
+      margin: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+
+    .chat-item-sub.online {
+      color: #00a884;
+      font-weight: 500;
+    }
+
+    /* Right Column: WhatsApp Chat Area */
     .chat-main {
       display: flex;
       flex-direction: column;
       height: 100%;
       position: relative;
     }
-    
+
     .chat-main::before {
       content: "";
       position: absolute;
       top: 0; left: 0; right: 0; bottom: 0;
       background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
-      opacity: 0.4;
+      opacity: 0.35;
       z-index: 0;
+      pointer-events: none;
     }
-    
+
+    /* Header for Chat Panel */
     .chat-body-header {
-      background: hsl(210, 14%, 96%);
-      padding: 0.75rem 1.5rem;
-      border-bottom: 1px solid var(--border-light);
+      background: #f0f2f5;
+      padding: 0.6rem 1.2rem;
+      border-bottom: 1px solid #e9edef;
       display: flex;
       align-items: center;
       justify-content: space-between;
       z-index: 1;
+      height: 60px;
+      box-sizing: border-box;
     }
-    
+
+    .chat-header-user {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .chat-header-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #111b21;
+      margin: 0;
+    }
+
+    .chat-header-status {
+      font-size: 0.75rem;
+      color: #00a884;
+      font-weight: 500;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.2rem;
+    }
+
+    .chat-header-status.offline {
+      color: #667781;
+    }
+
+    .chat-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      color: #54656f;
+    }
+
+    .chat-header-actions svg {
+      cursor: pointer;
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Chat Window */
     .chat-window {
       flex: 1;
       overflow-y: auto;
-      padding: 2rem;
+      padding: 1.5rem 2.5rem;
       display: flex;
       flex-direction: column;
-      gap: 1rem;
+      gap: 0.85rem;
       z-index: 1;
     }
-    
-    .msg-bubble {
-      max-width: 60%;
-      padding: 0.75rem 1rem;
-      border-radius: var(--radius-sm);
-      font-size: 0.9rem;
-      line-height: 1.5;
-      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
-      word-break: break-word;
-      white-space: pre-wrap;
+
+    .chat-window::-webkit-scrollbar {
+      width: 6px;
     }
-    
+
+    .chat-window::-webkit-scrollbar-thumb {
+      background-color: rgba(0,0,0,0.15);
+      border-radius: 3px;
+    }
+
+    /* Message Date Indicator */
+    .message-date {
+      align-self: center;
+      background: white;
+      padding: 0.35rem 0.75rem;
+      border-radius: 8px;
+      font-size: 0.72rem;
+      color: #54656f;
+      text-transform: uppercase;
+      font-weight: 500;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.08);
+      margin: 0.5rem 0;
+      letter-spacing: 0.5px;
+    }
+
+    /* Message Bubbles */
+    .msg-bubble {
+      max-width: 65%;
+      padding: 0.55rem 0.85rem;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      box-shadow: 0 1.2px 2px rgba(0,0,0,0.13);
+      word-break: break-word;
+      position: relative;
+    }
+
     .msg-bot {
       background: white;
       align-self: flex-start;
       border-top-left-radius: 0;
+      color: #111b21;
     }
-    
+
     .msg-user {
       background: #d9fdd3;
       align-self: flex-end;
       border-top-right-radius: 0;
+      color: #111b21;
     }
-    
-    .chat-input-bar {
-      background: hsl(210, 14%, 96%);
-      padding: 1rem;
+
+    /* Timestamp inside bubble */
+    .msg-time {
+      text-align: right;
+      font-size: 0.68rem;
+      color: #667781;
+      margin-top: 0.25rem;
       display: flex;
+      justify-content: flex-end;
       align-items: center;
-      gap: 1rem;
-      z-index: 1;
+      gap: 0.2rem;
     }
-    
-    .chat-input-bar input {
-      flex: 1;
-      border-radius: 20px;
-      padding: 0.6rem 1.2rem;
-      border: 1px solid var(--border-light);
+
+    .msg-user .msg-time {
+      color: #537a5a;
     }
-    
-    .action-panel {
-      padding: 1rem;
-      background: white;
-      border-top: 1px solid var(--border-light);
+
+    /* Welcome interactive list card */
+    .welcome-card-header {
+      font-size: 0.95rem;
+      font-weight: 500;
+      color: #111b21;
+      padding-bottom: 0.5rem;
+    }
+
+    .welcome-card-telugu {
+      font-size: 0.88rem;
+      color: #54656f;
+      margin-top: 0.25rem;
+    }
+
+    .welcome-list-container {
+      margin-top: 0.65rem;
+      border-top: 1px solid #f0f2f5;
+    }
+
+    .welcome-list-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.7rem 0.25rem;
+      border-bottom: 1px solid #f0f2f5;
+      cursor: pointer;
+      transition: background 0.2s, padding-left 0.2s;
+    }
+
+    .welcome-list-row:last-child {
+      border-bottom: none;
+    }
+
+    .welcome-list-row:hover {
+      background: #f8f9fa;
+      padding-left: 0.5rem;
+    }
+
+    .welcome-row-title {
+      font-size: 0.88rem;
+      font-weight: 500;
+      color: #111b21;
+    }
+
+    .welcome-row-telugu {
+      font-size: 0.8rem;
+      color: #667781;
+      margin-left: 0.35rem;
+    }
+
+    .welcome-row-arrow {
+      color: #00a884;
+      font-weight: bold;
+      font-size: 0.85rem;
+    }
+
+    /* GPS location styling in bubble */
+    .location-card {
       display: flex;
       flex-direction: column;
-      gap: 0.75rem;
+      gap: 0.35rem;
     }
-    
-    .action-row {
+
+    .location-header {
+      font-weight: bold;
+      color: #00a884;
       display: flex;
-      gap: 0.5rem;
-      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
     }
-    
-    @media (max-width: 768px) {
+
+    .location-details {
+      font-size: 0.85rem;
+      color: #54656f;
+    }
+
+    .location-link {
+      font-size: 0.85rem;
+      color: #0066cc;
+      text-decoration: none;
+      word-break: break-all;
+    }
+
+    .location-link:hover {
+      text-decoration: underline;
+    }
+
+    /* Bottom Input Bar */
+    .chat-input-bar {
+      background: #f0f2f5;
+      padding: 0.6rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      z-index: 1;
+      height: 60px;
+      box-sizing: border-box;
+    }
+
+    .input-icon-btn {
+      color: #54656f;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: color 0.2s;
+    }
+
+    .input-icon-btn:hover {
+      color: #111b21;
+    }
+
+    .input-icon-btn svg {
+      width: 24px;
+      height: 24px;
+    }
+
+    .chat-input-wrapper {
+      flex: 1;
+      background: white;
+      border-radius: 20px;
+      padding: 0.45rem 1rem;
+      display: flex;
+      align-items: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
+
+    .chat-input-wrapper input {
+      border: none;
+      background: transparent;
+      width: 100%;
+      outline: none;
+      font-size: 0.92rem;
+      color: #111b21;
+    }
+
+    .chat-input-wrapper input::placeholder {
+      color: #8696a0;
+    }
+
+    /* Circular Send Button */
+    .send-circle-btn {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #00a884;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+      transition: transform 0.1s;
+    }
+
+    .send-circle-btn:active {
+      transform: scale(0.95);
+    }
+
+    .send-circle-btn svg {
+      width: 20px;
+      height: 20px;
+      fill: white;
+      transform: rotate(45deg);
+    }
+
+    /* Extra triggers sidebar panel inside the simulator page */
+    .floating-tools-panel {
+      position: absolute;
+      right: 1.5rem;
+      top: 5rem;
+      z-index: 10;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(0,0,0,0.08);
+      border-radius: 12px;
+      padding: 0.85rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+      width: 240px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+    }
+
+    .floating-tools-panel h4 {
+      margin: 0 0 0.25rem 0;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: #54656f;
+      letter-spacing: 0.5px;
+    }
+
+    .floating-tools-panel button {
+      background: white;
+      border: 1px solid #e9edef;
+      padding: 0.5rem;
+      border-radius: 8px;
+      font-size: 0.78rem;
+      color: #111b21;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      transition: background 0.2s;
+      text-align: left;
+    }
+
+    .floating-tools-panel button:hover {
+      background: #f0f2f5;
+    }
+
+    @media (max-width: 900px) {
       .chat-layout {
         grid-template-columns: 1fr;
       }
       .chat-sidebar {
         display: none;
       }
+      .floating-tools-panel {
+        display: none;
+      }
     }
   </style>
 </head>
 <body class="app-container">
+
   <!-- Top Navigation Bar -->
-  <div class="header" style="padding: 0.8rem 2rem;">
-    <div class="header-inner">
-      <div class="header-brand">
-        <h2>💬 WhatsApp Chatbot Simulator</h2>
-      </div>
-      <div class="nav-menu">
-        <a href="/dashboard" class="nav-link">🏛️ Admin Dashboard</a>
-      </div>
-    </div>
+  <div class="top-nav">
+    <h2>💬 WhatsApp Web Chatbot Simulator</h2>
+    <a href="/dashboard">🏛️ Sarpanch Admin Dashboard</a>
   </div>
 
   <div class="chat-layout">
-    <!-- Left Sidebar: Active Channels -->
+    
+    <!-- Left Sidebar: WhatsApp Dark Mode Chat List -->
     <div class="chat-sidebar">
-      <div class="chat-user-profile">
-        <div class="header-avatar" style="width: 40px; height: 40px; background: var(--primary); display: flex; align-items: center; justify-content: center; color: white;">📱</div>
-        <div>
-          <h4 style="font-size: 0.95rem;">Citizen Simulator</h4>
-          <small style="color: var(--text-muted); font-weight: 500;">Active Test Phone: +91 99999 88888</small>
-        </div>
-      </div>
-      <div class="chat-list">
-        <div class="chat-list-item">
-          <div class="header-avatar" style="width: 44px; height: 44px; background: hsl(142, 60%, 26%); display: flex; align-items: center; justify-content: center; color: white;">🏛️</div>
-          <div>
-            <h4 style="font-size: 0.9rem; font-weight: 700; color: var(--primary);">{{ village }} Bot</h4>
-            <small style="color: var(--primary); font-weight: 600;">🟢 Online · Tap to interact</small>
-          </div>
-        </div>
-      </div>
       
-      <!-- Quick Simulated Event Triggers -->
-      <div class="action-panel">
-        <h4 style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">📍 Simulated GPS Coordinates</h4>
-        <div class="action-row">
-          <button onclick="sendSimulatedLocation(17.5937, 79.1245, 'Kolukonda Village', 'Jangaon, Telangana')" class="btn btn-info" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
-            📍 Send Kolukonda GPS
-          </button>
-          <button onclick="sendSimulatedLocation(17.5990, 79.1120, 'Keesara Town', 'Medchal, Telangana')" class="btn btn-neutral" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
-            📍 Send Keesara GPS
-          </button>
-        </div>
-        
-        <h4 style="font-size: 0.85rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px; margin-top: 0.5rem;">🎤 Simulated Audio/Voice Notes</h4>
-        <div class="action-row">
-          <button onclick="sendSimulatedVoice('voice_test_id_1')" class="btn btn-accent" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
-            🎤 Send Voice Message
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Right Column: Active Conversation Window -->
-    <div class="chat-main">
-      <div class="chat-body-header">
-        <div style="display: flex; align-items: center; gap: 0.75rem;">
-          <div class="header-avatar" style="width: 40px; height: 40px; background: hsl(142, 60%, 26%); display: flex; align-items: center; justify-content: center; color: white;">🏛️</div>
-          <div>
-            <h4 style="font-size: 0.95rem;">{{ village }} Gram Panchayat Bot</h4>
-            <small style="color: var(--text-muted); font-weight: 500;">Sarpanch: {{ sarpanch }}</small>
+      <!-- Sidebar Header -->
+      <div class="sidebar-header">
+        <div class="sidebar-header-left">
+          <div class="wa-logo-container">
+            <svg viewBox="0 0 24 24">
+              <path d="M12.031 6.172c-3.202 0-5.805 2.603-5.805 5.806 0 1.258.4 2.423 1.085 3.379l-.715 2.614 2.673-.701a5.772 5.772 0 0 0 2.762.708c3.202 0 5.805-2.603 5.805-5.806 0-3.203-2.603-5.806-5.805-5.806zm4.129 8.243c-.165.465-.96.905-1.32.96-.36.056-.81.085-2.279-.506-1.787-.719-2.936-2.529-3.026-2.65-.09-.12-.729-.97-.729-1.849 0-.879.46-1.31.62-1.48.165-.17.36-.21.48-.21.12 0 .24 0 .345.005.115.005.27-.04.42.325.165.405.57 1.39.62 1.49.05.1.085.22.015.36-.07.14-.15.31-.225.405-.075.095-.165.2-.075.355.09.155.399.66.854 1.065.585.52 1.08.68 1.23.755.15.075.24.06.33-.04.09-.1.39-.455.495-.615.105-.16.21-.135.355-.08.15.055.945.445 1.11.53.165.085.275.125.315.195.04.07.04.41-.125.875zM12 2C6.482 2 2 6.482 2 12c0 2.176.702 4.186 1.89 5.82L2.1 23.4l5.696-1.498A9.948 9.948 0 0 0 12 22c5.518 0 10-4.482 10-10S17.518 2 12 2z"></path>
+            </svg>
           </div>
         </div>
-      </div>
-
-      <!-- Dialogue Bubble Stream -->
-      <div class="chat-window" id="chatWindow">
-        <div class="msg-bubble msg-bot">
-          Namaskaram! Welcome to *{{ village }}* Gram Panchayat<br>Sarpanch: *{{ sarpanch }}*<br><br>1️⃣ Register Complaint<br>2️⃣ Request Certificate<br>3️⃣ Track Status<br>4️⃣ Government Schemes<br>5️⃣ Development Works<br>6️⃣ Announcements<br>7️⃣ Office Info<br><br>📍 You can share your location or 🎤 send voice message<br>తెలుగు కావాలంటే *telugu* టైప్ చేయండి.
+        <div class="sidebar-header-right">
+          <!-- Search Magnifier Icon -->
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+          </svg>
+          <!-- Compose Pen Icon -->
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"></path>
+          </svg>
         </div>
       </div>
 
-      <!-- Input Text Action Bar -->
-      <div class="chat-input-bar">
-        <input type="text" id="chatInput" placeholder="Type a message to WhatsApp Chatbot..." onkeydown="handleEnter(event)">
-        <button onclick="sendTextMessage()" class="btn btn-primary" style="padding: 0.55rem 1.2rem; border-radius: 20px;">Send 📨</button>
+      <!-- Sidebar Search Box -->
+      <div class="sidebar-search">
+        <div class="search-input-wrapper">
+          <svg viewBox="0 0 24 24">
+            <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+          </svg>
+          <input type="text" placeholder="Search or start new chat">
+        </div>
+      </div>
+
+      <!-- Chat list -->
+      <div class="chat-list" id="chatList">
+        
+        <!-- Active Chat: Kolukonda Bot -->
+        <div class="chat-list-item active" onclick="switchChat('bot')" id="chat-item-bot">
+          <div class="avatar avatar-bot">
+            <!-- Custom styled beautiful avatar with leaves -->
+            <div style="background: #25d366; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.85rem; line-height: 1;">
+              <span style="font-size: 0.9rem; font-weight: 800;">KP</span>
+              <span style="font-size: 0.55rem; opacity: 0.9; margin-top: 2px;">🌿 BOT</span>
+            </div>
+          </div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">{{ village }} Bot</h4>
+              <span class="chat-item-time" id="chat-time-bot">3:03 PM</span>
+            </div>
+            <p class="chat-item-sub online">Online</p>
+          </div>
+        </div>
+
+        <!-- Suresh Kumar -->
+        <div class="chat-list-item" onclick="switchChat('suresh')" id="chat-item-suresh">
+          <div class="avatar avatar-suresh">
+            <div style="background: hsl(20, 60%, 65%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.1rem;">👤</div>
+          </div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">Suresh Kumar</h4>
+              <span class="chat-item-time">10:45 AM</span>
+            </div>
+            <p class="chat-item-sub">Hi sir, need help with water...</p>
+          </div>
+        </div>
+
+        <!-- MRO Office -->
+        <div class="chat-list-item" onclick="switchChat('mro')" id="chat-item-mro">
+          <div class="avatar avatar-mro">🏛️</div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">MRO Office</h4>
+              <span class="chat-item-time">Yesterday</span>
+            </div>
+            <p class="chat-item-sub">Certificate request approved</p>
+          </div>
+        </div>
+
+        <!-- Anjali Devi -->
+        <div class="chat-list-item" onclick="switchChat('anjali')" id="chat-item-anjali">
+          <div class="avatar avatar-anjali">
+            <div style="background: hsl(340, 60%, 65%); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 1.1rem;">👩</div>
+          </div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">Anjali Devi</h4>
+              <span class="chat-item-time">Wednesday</span>
+            </div>
+            <p class="chat-item-sub">Thank you for the prompt action</p>
+          </div>
+        </div>
+
+        <!-- Village Water Board -->
+        <div class="chat-list-item" onclick="switchChat('water')" id="chat-item-water">
+          <div class="avatar avatar-water">💧</div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">Village Water Board</h4>
+              <span class="chat-item-time">20-May</span>
+            </div>
+            <p class="chat-item-sub">Water supply timings updated</p>
+          </div>
+        </div>
+
+        <!-- Panchayat News -->
+        <div class="chat-list-item" onclick="switchChat('news')" id="chat-item-news">
+          <div class="avatar avatar-news">📰</div>
+          <div class="chat-item-info">
+            <div class="chat-item-title-row">
+              <h4 class="chat-item-title">Panchayat News</h4>
+              <span class="chat-item-time">18-May</span>
+            </div>
+            <p class="chat-item-sub">New schemes launched today</p>
+          </div>
+        </div>
+
       </div>
     </div>
+
+    <!-- Right Column: Active Conversation Pane -->
+    <div class="chat-main">
+      
+      <!-- Floating Tools Panel for Simulator Triggers -->
+      <div class="floating-tools-panel" id="floatingTools">
+        <h4>📍 Simulator Controls</h4>
+        <button onclick="sendSimulatedLocation(17.5937, 79.1245, 'Kolukonda Gram Panchayat', 'Kolukonda, Jangaon District, Telangana')">
+          📍 Send Kolukonda GPS
+        </button>
+        <button onclick="sendSimulatedLocation(17.5990, 79.1120, 'Jangaon Central', 'Mandal Head Office, Telangana')">
+          📍 Send Jangaon GPS
+        </button>
+        <button onclick="sendSimulatedVoice('voice_rec_id_999')">
+          🎤 Send Mock Voice Message
+        </button>
+      </div>
+
+      <!-- Chat Pane Header -->
+      <div class="chat-body-header">
+        <div class="chat-header-user">
+          <div class="avatar avatar-bot" id="headerAvatar" style="width: 40px; height: 40px;">
+            <div style="background: #25d366; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; line-height: 1;">
+              <span style="font-size: 0.85rem; font-weight: 800;">KP</span>
+              <span style="font-size: 0.5rem; opacity: 0.9; margin-top: 1px;">🌿 BOT</span>
+            </div>
+          </div>
+          <div>
+            <h4 class="chat-header-name" id="headerName">{{ village }} Bot</h4>
+            <p class="chat-header-status" id="headerStatus">Online</p>
+          </div>
+        </div>
+        <div class="chat-header-actions">
+          <!-- Magnifying search glass -->
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"></path>
+          </svg>
+          <!-- Three vertical dots menu -->
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"></path>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Dialogue Bubble Window -->
+      <div class="chat-window" id="chatWindow">
+        <div class="message-date">Today</div>
+        
+        <!-- Welcome Option bubble with high fidelity card styling matching attached file -->
+        <div class="msg-bubble msg-bot" id="welcomeMsgBubble">
+          <div class="welcome-card-header">
+            Welcome to Kolukonda Gram Panchayat Portal! 🙏
+            <div class="welcome-card-telugu">[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం!]</div>
+          </div>
+          <div class="welcome-list-container">
+            <div class="welcome-list-row" onclick="triggerMenuRow('1')">
+              <span class="welcome-row-title">1. Register Complaint <span class="welcome-row-telugu">[ఫిర్యాదు నమోదు]</span></span>
+              <span class="welcome-row-arrow">➔</span>
+            </div>
+            <div class="welcome-list-row" onclick="triggerMenuRow('2')">
+              <span class="welcome-row-title">2. Request Certificate <span class="welcome-row-telugu">[ధృవీకరణ పత్రం కొరకు]</span></span>
+              <span class="welcome-row-arrow">➔</span>
+            </div>
+            <div class="welcome-list-row" onclick="triggerMenuRow('3')">
+              <span class="welcome-row-title">3. Check Status <span class="welcome-row-telugu">[స్థితిని తనిఖీ చేయండి]</span></span>
+              <span class="welcome-row-arrow">➔</span>
+            </div>
+            <div class="welcome-list-row" onclick="triggerMenuRow('4')">
+              <span class="welcome-row-title">4. View Schemes <span class="welcome-row-telugu">[పథకాలను వీక్షించండి]</span></span>
+              <span class="welcome-row-arrow">➔</span>
+            </div>
+            <div class="welcome-list-row" onclick="triggerMenuRow('5')">
+              <span class="welcome-row-title">5. Contact Ward <span class="welcome-row-telugu">[వార్డు సంప్రదించండి]</span></span>
+              <span class="welcome-row-arrow">➔</span>
+            </div>
+          </div>
+          <div class="msg-time" id="welcomeTime">3:03 PM</div>
+        </div>
+
+      </div>
+
+      <!-- Input Text Bar -->
+      <div class="chat-input-bar">
+        
+        <!-- Paperclip Icon for Attachment -->
+        <div class="input-icon-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .83-.67 1.5-1.5 1.5s-1.5-.67-1.5-1.5V6H9v9.5a3 3 0 0 0 6 0V5a4 4 0 0 0-8 0v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"></path>
+          </svg>
+        </div>
+
+        <!-- Smiley Face Icon for Emoji -->
+        <div class="input-icon-btn">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 1.04-.42 1.99-1.07 2.25z"></path>
+          </svg>
+        </div>
+
+        <!-- Chat Input field -->
+        <div class="chat-input-wrapper">
+          <input type="text" id="chatInput" placeholder="Type a message" onkeydown="handleEnter(event)">
+        </div>
+
+        <!-- Green Send Pill Button -->
+        <button onclick="sendTextMessage()" class="send-circle-btn">
+          <svg viewBox="0 0 24 24">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+          </svg>
+        </button>
+
+      </div>
+
+    </div>
+
   </div>
 
   <script>
@@ -231,10 +933,224 @@
     const chatWindow = document.getElementById("chatWindow");
     const chatInput = document.getElementById("chatInput");
     
+    let activeChatId = 'bot';
+
+    // Set timestamps dynamically on load to reflect current times
+    function getCurrentTime() {
+      const now = new Date();
+      let hours = now.getHours();
+      let minutes = now.getMinutes();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // the hour '0' should be '12'
+      minutes = minutes < 10 ? '0'+minutes : minutes;
+      return `${hours}:${minutes} ${ampm}`;
+    }
+
+    document.getElementById("chat-time-bot").innerText = getCurrentTime();
+    document.getElementById("welcomeTime").innerText = getCurrentTime();
+
+    // Data for beautiful mock archived chats
+    const mockChats = {
+      'bot': {
+        name: 'Kolukonda Panchayat Bot',
+        status: 'Online',
+        isBot: true,
+        html: `
+          <div class="message-date">Today</div>
+          <div class="msg-bubble msg-bot" id="welcomeMsgBubble">
+            <div class="welcome-card-header">
+              Welcome to Kolukonda Gram Panchayat Portal! 🙏
+              <div class="welcome-card-telugu">[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం!]</div>
+            </div>
+            <div class="welcome-list-container">
+              <div class="welcome-list-row" onclick="triggerMenuRow('1')">
+                <span class="welcome-row-title">1. Register Complaint <span class="welcome-row-telugu">[ఫిర్యాదు నమోదు]</span></span>
+                <span class="welcome-row-arrow">➔</span>
+              </div>
+              <div class="welcome-list-row" onclick="triggerMenuRow('2')">
+                <span class="welcome-row-title">2. Request Certificate <span class="welcome-row-telugu">[ధృవీకరణ పత్రం కొరకు]</span></span>
+                <span class="welcome-row-arrow">➔</span>
+              </div>
+              <div class="welcome-list-row" onclick="triggerMenuRow('3')">
+                <span class="welcome-row-title">3. Check Status <span class="welcome-row-telugu">[స్థితిని తనిఖీ చేయండి]</span></span>
+                <span class="welcome-row-arrow">➔</span>
+              </div>
+              <div class="welcome-list-row" onclick="triggerMenuRow('4')">
+                <span class="welcome-row-title">4. View Schemes <span class="welcome-row-telugu">[పథకాలను వీక్షించండి]</span></span>
+                <span class="welcome-row-arrow">➔</span>
+              </div>
+              <div class="welcome-list-row" onclick="triggerMenuRow('5')">
+                <span class="welcome-row-title">5. Contact Ward <span class="welcome-row-telugu">[వార్డు సంప్రదించండి]</span></span>
+                <span class="welcome-row-arrow">➔</span>
+              </div>
+            </div>
+            <div class="msg-time">${getCurrentTime()}</div>
+          </div>
+        `
+      },
+      'suresh': {
+        name: 'Suresh Kumar',
+        status: 'Offline',
+        isBot: false,
+        html: `
+          <div class="message-date">Yesterday</div>
+          <div class="msg-bubble msg-bot">
+            Namaskaram! Is the water supply normal today in Ward 4?
+            <div class="msg-time">10:45 AM</div>
+          </div>
+          <div class="msg-bubble msg-user">
+            Yes Suresh, the water pump was repaired yesterday. Supply is fully operational today.
+            <div class="msg-time">10:50 AM</div>
+          </div>
+          <div class="msg-bubble msg-bot">
+            Thank you! I will verify with the ward members.
+            <div class="msg-time">10:52 AM</div>
+          </div>
+        `
+      },
+      'mro': {
+        name: 'MRO Office',
+        status: 'Offline',
+        isBot: false,
+        html: `
+          <div class="message-date">Wednesday</div>
+          <div class="msg-bubble msg-user">
+            Sir, is my caste certificate verified? Request ID is CERT-49A32.
+            <div class="msg-time">2:15 PM</div>
+          </div>
+          <div class="msg-bubble msg-bot">
+            Yes, we have verified the documents and confirmed the applicant details. It will be digitally signed by this evening.
+            <div class="msg-time">3:40 PM</div>
+          </div>
+        `
+      },
+      'anjali': {
+        name: 'Anjali Devi',
+        status: 'Offline',
+        isBot: false,
+        html: `
+          <div class="message-date">19-May-2026</div>
+          <div class="msg-bubble msg-bot">
+            Can you help me submit the Mahalakshmi scheme application? I need a copy of the self-declaration form.
+            <div class="msg-time">9:30 AM</div>
+          </div>
+          <div class="msg-bubble msg-user">
+            Sure Anjali, please visit the Panchayat office tomorrow morning at 10 AM. We will print the form for you.
+            <div class="msg-time">10:15 AM</div>
+          </div>
+          <div class="msg-bubble msg-bot">
+            Thank you for the prompt action! I will collect it tomorrow.
+            <div class="msg-time">10:20 AM</div>
+          </div>
+        `
+      },
+      'water': {
+        name: 'Village Water Board',
+        status: 'Offline',
+        isBot: false,
+        html: `
+          <div class="message-date">17-May-2026</div>
+          <div class="msg-bubble msg-bot">
+            📢 <b>Water Board Notice:</b> Water supply will be delayed by 2 hours tomorrow (18-May) due to pipeline repairs at Jangaon Main Road.
+            <div class="msg-time">4:00 PM</div>
+          </div>
+        `
+      },
+      'news': {
+        name: 'Panchayat News',
+        status: 'Offline',
+        isBot: false,
+        html: `
+          <div class="message-date">15-May-2026</div>
+          <div class="msg-bubble msg-bot">
+            📢 <b>Gram Sabha Announcement:</b> A village assembly is scheduled for Sunday (24-May) at 10:00 AM at the Kolukonda Panchayat Office. All residents are invited to participate.
+            <div class="msg-time">11:00 AM</div>
+          </div>
+        `
+      }
+    };
+
+    // Keep dynamic storage for the Bot conversation so it persists when switching back!
+    let botConversationHtml = mockChats['bot'].html;
+
+    function switchChat(chatId) {
+      // Save current bot HTML if leaving it
+      if (activeChatId === 'bot') {
+        botConversationHtml = chatWindow.innerHTML;
+      }
+
+      activeChatId = chatId;
+
+      // Update active sidebar item
+      document.querySelectorAll('.chat-list-item').forEach(item => item.classList.remove('active'));
+      document.getElementById(`chat-item-${chatId}`).classList.add('active');
+
+      // Update Header info
+      const chat = mockChats[chatId];
+      document.getElementById("headerName").innerText = chat.name;
+      
+      const statusEl = document.getElementById("headerStatus");
+      statusEl.innerText = chat.status;
+      if (chat.status === 'Online') {
+        statusEl.classList.remove('offline');
+      } else {
+        statusEl.classList.add('offline');
+      }
+
+      // Update Header Avatar
+      const headerAvatar = document.getElementById("headerAvatar");
+      if (chatId === 'bot') {
+        headerAvatar.innerHTML = `
+          <div style="background: #25d366; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 0.8rem; line-height: 1;">
+            <span style="font-size: 0.85rem; font-weight: 800;">KP</span>
+            <span style="font-size: 0.5rem; opacity: 0.9; margin-top: 1px;">🌿 BOT</span>
+          </div>
+        `;
+        document.getElementById("floatingTools").style.display = "flex";
+        document.getElementById("chatInput").disabled = false;
+        document.getElementById("chatInput").placeholder = "Type a message";
+      } else {
+        const itemAvatar = document.querySelector(`#chat-item-${chatId} .avatar`).innerHTML;
+        headerAvatar.innerHTML = itemAvatar;
+        document.getElementById("floatingTools").style.display = "none";
+        document.getElementById("chatInput").disabled = false;
+        document.getElementById("chatInput").placeholder = `Send message to ${chat.name}...`;
+      }
+
+      // Update Chat Window HTML
+      if (chatId === 'bot') {
+        chatWindow.innerHTML = botConversationHtml;
+      } else {
+        chatWindow.innerHTML = chat.html;
+      }
+      chatWindow.scrollTop = chatWindow.scrollHeight;
+    }
+
+    function triggerMenuRow(optionNumber) {
+      if (activeChatId !== 'bot') return;
+      
+      // Auto append the user choice
+      appendMessage(optionNumber, false);
+      
+      // Post to chatbot backend
+      postWebhook({
+        "from": senderPhone,
+        "type": "text",
+        "text": { "body": optionNumber }
+      });
+    }
+
     function appendMessage(text, isBot) {
       const bubble = document.createElement("div");
       bubble.className = "msg-bubble " + (isBot ? "msg-bot" : "msg-user");
-      bubble.innerHTML = text;
+      
+      // Format text beautifully
+      bubble.innerHTML = `
+        <div style="white-space: pre-wrap;">${text}</div>
+        <div class="msg-time">${getCurrentTime()}</div>
+      `;
+      
       chatWindow.appendChild(bubble);
       chatWindow.scrollTop = chatWindow.scrollHeight;
     }
@@ -252,15 +1168,52 @@
       appendMessage(text, false);
       chatInput.value = "";
       
-      postWebhook({
-        "from": senderPhone,
-        "type": "text",
-        "text": { "body": text }
-      });
+      if (activeChatId === 'bot') {
+        // Chatbot Integration
+        postWebhook({
+          "from": senderPhone,
+          "type": "text",
+          "text": { "body": text }
+        });
+      } else {
+        // Mock Auto replies from other contacts
+        const activeName = mockChats[activeChatId].name;
+        const currentId = activeChatId;
+        
+        setTimeout(() => {
+          if (activeChatId === currentId) {
+            let replyText = `Thanks for your message. I am currently out of office, but will review this as soon as possible.`;
+            if (currentId === 'suresh') {
+              replyText = `Okay, I will share these details with my neighbors in Ward 4. Thank you!`;
+            } else if (currentId === 'mro') {
+              replyText = `Received. Your application status will update in the dashboard automatically.`;
+            } else if (currentId === 'anjali') {
+              replyText = `Thank you, I will make sure to bring my Aadhaar card copy as well.`;
+            }
+            appendMessage(replyText, true);
+            // Save to mock chat history
+            mockChats[currentId].html = chatWindow.innerHTML;
+          }
+        }, 1500);
+      }
     }
     
     function sendSimulatedLocation(lat, lng, name, address) {
-      appendMessage(`📍 Sent Simulated Location:<br><b>${name}</b><br>${address}<br>Coordinates: ${lat}, ${lng}`, false);
+      if (activeChatId !== 'bot') return;
+
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble msg-user";
+      
+      bubble.innerHTML = `
+        <div class="location-card">
+          <div class="location-header">📍 Sent Location</div>
+          <div class="location-details"><b>${name}</b><br>${address}</div>
+          <a class="location-link" href="https://maps.google.com/?q=${lat},${lng}" target="_blank">https://maps.google.com/?q=${lat},${lng}</a>
+        </div>
+        <div class="msg-time">${getCurrentTime()}</div>
+      `;
+      chatWindow.appendChild(bubble);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
       
       postWebhook({
         "from": senderPhone,
@@ -275,7 +1228,23 @@
     }
     
     function sendSimulatedVoice(voiceId) {
-      appendMessage(`🎤 Sent Simulated Voice Note (ID: ${voiceId})`, false);
+      if (activeChatId !== 'bot') return;
+
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble msg-user";
+      
+      bubble.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: #111b21;">
+          <span style="font-size: 1.5rem;">🎤</span>
+          <div>
+            <b>Voice Note</b><br>
+            <span style="font-size: 0.8rem; color: #54656f;">ID: ${voiceId}</span>
+          </div>
+        </div>
+        <div class="msg-time">${getCurrentTime()}</div>
+      `;
+      chatWindow.appendChild(bubble);
+      chatWindow.scrollTop = chatWindow.scrollHeight;
       
       postWebhook({
         "from": senderPhone,
@@ -312,7 +1281,13 @@
       // Temporary typing indicator
       const loader = document.createElement("div");
       loader.className = "msg-bubble msg-bot";
-      loader.innerHTML = "💬 <i>Bot is responding...</i>";
+      loader.id = "typingIndicator";
+      loader.innerHTML = `
+        <div style="display: flex; align-items: center; gap: 0.5rem; color: #54656f;">
+          <span>💬</span>
+          <i>Bot is typing...</i>
+        </div>
+      `;
       chatWindow.appendChild(loader);
       chatWindow.scrollTop = chatWindow.scrollHeight;
       
@@ -326,7 +1301,9 @@
       })
       .then(res => res.json())
       .then(data => {
-        loader.remove();
+        const ind = document.getElementById("typingIndicator");
+        if (ind) ind.remove();
+        
         if (data.status === "success" && data.reply) {
           appendMessage(data.reply, true);
         } else {
@@ -334,7 +1311,8 @@
         }
       })
       .catch(err => {
-        loader.remove();
+        const ind = document.getElementById("typingIndicator");
+        if (ind) ind.remove();
         appendMessage(`❌ Webhook Error: ${err.message}`, true);
       });
     }
