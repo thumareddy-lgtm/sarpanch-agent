@@ -5,6 +5,62 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
   <title>{{ village }} Dashboard</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+  <style>
+    /* Professional Two-Column Dashboard Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 2rem;
+      align-items: start;
+      max-width: 1500px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+    
+    .sticky-sidebar {
+      position: sticky;
+      top: 100px; /* Leave space for sticky top navigation bar */
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+      z-index: 10;
+    }
+    
+    .dashboard-main {
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      min-width: 0; /* Prevent flex elements from stretching viewport */
+    }
+    
+    /* Guarantee premium light blue background color on page body */
+    body {
+      background-color: hsl(205, 60%, 92%) !important;
+    }
+    
+    /* Accurate scroll offsets for targeted tables right below the sticky header */
+    html {
+      scroll-behavior: smooth;
+      scroll-padding-top: 100px !important;
+    }
+    
+    .table-sec {
+      scroll-margin-top: 100px !important;
+    }
+
+    @media (max-width: 992px) {
+      .dashboard-grid {
+        grid-template-columns: 1fr;
+        padding: 1rem;
+        gap: 1.5rem;
+      }
+      .sticky-sidebar {
+        position: relative !important;
+        top: 0 !important;
+      }
+    }
+  </style>
   <script>
     function showHeaderPlaceholder() {
       document.getElementById('sarpanch-header-img').style.display = 'none';
@@ -13,12 +69,33 @@
   </script>
 </head>
 <body class="app-container">
-  <!-- Top Navigation Bar -->
-  <div class="header" style="padding: 2rem 1.5rem; text-align: center;">
-    <div class="header-inner" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1.5rem; max-width: 1000px; margin: 0 auto;">
+  <!-- Top Navigation Bar (Sticky with Navigation Links on the Top-Right) -->
+  <div class="header" style="position: sticky; top: 0; z-index: 100; padding: 1rem 2rem; background: var(--primary); box-shadow: var(--shadow-md);">
+    <div class="header-inner" style="display: flex; justify-content: space-between; align-items: center; max-width: 1500px; margin: 0 auto; width: 100%;">
       
-      <!-- Large Centered Square Avatar (270px x 270px) -->
-      <div class="header-brand" style="display: flex; flex-direction: column; align-items: center; gap: 1rem; margin: 0 auto;">
+      <!-- Brand Logo on the Left -->
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <h2 style="font-size: 1.35rem; color: var(--text-on-primary); margin: 0; font-family: 'Outfit', sans-serif; font-weight: 700;">🏛️ {{ village }} Panchayat Portal</h2>
+      </div>
+
+      <!-- Navigation Menu links on the Top-Right -->
+      <div class="nav-menu" style="display: flex; gap: 0.75rem; align-items: center;">
+        <a href="/profile" class="nav-link" style="font-size: 0.9rem; padding: 0.5rem 1rem; font-weight: 600;">Profile</a>
+        <a href="/sarpanchs" class="nav-link" style="font-size: 0.9rem; padding: 0.5rem 1rem; font-weight: 600;">Sarpanchs</a>
+        <a href="/logout" class="nav-link" style="background: var(--danger); font-size: 0.9rem; padding: 0.5rem 1rem; font-weight: 600;">Logout</a>
+      </div>
+      
+    </div>
+  </div>
+
+  <!-- Professional Two-Column Dashboard Grid -->
+  <div class="dashboard-grid">
+    
+    <!-- Column 1: Sticky Profile Panel (Always Visible on Scroll) -->
+    <div class="sticky-sidebar">
+      <div class="glass-card" style="padding: 1.75rem; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 1.25rem; box-shadow: var(--shadow-md); border-radius: 16px;">
+        
+        <!-- Centered 270px Square Avatar in the Sidebar -->
         {% if photo %}
           <img src="{{ photo }}" id="sarpanch-header-img" class="header-avatar" onerror="showHeaderPlaceholder()" alt="Sarpanch Avatar" style="width: 270px; height: 270px; border-radius: 12px; object-fit: cover; border: 4px solid rgba(255,255,255,0.6); box-shadow: var(--shadow-md); transition: var(--transition);">
           
@@ -31,22 +108,20 @@
           </div>
         {% endif %}
         
-        <div class="header-title" style="text-align: center;">
-          <h1 style="font-size: 2.2rem; margin-bottom: 0.25rem; color: var(--text-on-primary);">{{ village }}</h1>
-          <div class="sub" style="font-size: 1.1rem; opacity: 0.9; font-weight: 500; color: var(--text-on-primary);">🏛️ {{ username }} · {{ mandal }} Gram Panchayat</div>
+        <!-- Title & Subtitle details -->
+        <div style="text-align: center; width: 100%;">
+          <h1 style="font-size: 1.8rem; font-weight: 800; color: var(--text-main); margin-bottom: 0.35rem; line-height: 1.2;">{{ village }}</h1>
+          <div style="font-size: 0.95rem; font-weight: 600; color: var(--text-muted); line-height: 1.4; border-top: 1px solid var(--border-light); padding-top: 0.75rem; margin-top: 0.75rem;">
+            🏛️ {{ username }}<br>
+            <span style="font-size: 0.85rem; font-weight: 500; opacity: 0.85;">Jangaon Gram Panchayat</span>
+          </div>
         </div>
+        
       </div>
-
-      <!-- Navigation Menu links below the centered profile photo -->
-      <div class="nav-menu" style="display: flex; justify-content: center; gap: 1rem; width: 100%; margin-top: 0.5rem;">
-        <a href="/profile" class="nav-link" style="font-size: 0.95rem; padding: 0.6rem 1.2rem;">Profile</a>
-        <a href="/sarpanchs" class="nav-link" style="font-size: 0.95rem; padding: 0.6rem 1.2rem;">Sarpanchs</a>
-        <a href="/logout" class="nav-link" style="background: var(--danger); font-size: 0.95rem; padding: 0.6rem 1.2rem;">Logout</a>
-      </div>
-      
     </div>
-  </div>
-   <div class="content-wrapper">
+
+    <!-- Column 2: Dashboard Content, Stats, and Tables (Scrollable) -->
+    <div class="dashboard-main">
     <!-- Quick Analytics Stats -->
     <div class="stats-grid">
       <div class="stat-card glass-card c-pending" onclick="window.location.href='?filter_status=pending&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}#complaints-sec'">
@@ -379,8 +454,8 @@
         <p>No historical resolved logs found.</p>
       </div>
       {% endif %}
-    </div>
-  </div>
+    </div> <!-- Close Column 2 (.dashboard-main) -->
+  </div> <!-- Close Two-Column Grid (.dashboard-grid) -->
 
   <script>
     // Smooth auto-scrolling to target elements
