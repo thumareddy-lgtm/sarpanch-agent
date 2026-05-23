@@ -30,7 +30,7 @@
             </div>
           {% endif %}
           <div class="form-group" style="max-width: 250px; margin: 0 auto 1.5rem auto;">
-            <input type="file" name="photo" accept="image/*" class="btn-neutral" style="font-size: 0.8rem; padding: 0.4rem;">
+            <input type="file" name="photo" accept="image/*" class="btn-neutral" onchange="previewImage(this)" style="font-size: 0.8rem; padding: 0.4rem;">
           </div>
         </div>
 
@@ -58,5 +58,26 @@
       </form>
     </div>
   </div>
+
+  <script>
+    function previewImage(input) {
+      if (input.files && input.files[0]) {
+        var reader = new FileReader();
+        reader.onload = function(e) {
+          var preview = document.querySelector('.profile-preview');
+          if (preview.tagName === 'IMG') {
+            preview.src = e.target.result;
+          } else {
+            var img = document.createElement('img');
+            img.src = e.target.result;
+            img.className = 'profile-preview';
+            img.alt = 'Profile Photo';
+            preview.parentNode.replaceChild(img, preview);
+          }
+        }
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+  </script>
 </body>
 </html>

@@ -564,8 +564,8 @@ textarea {
 }
 
 .profile-preview {
-  width: 140px;
-  height: 140px;
+  width: 360px;
+  height: 360px;
   object-fit: cover;
   border-radius: 50%;
   border: 4px solid var(--primary);

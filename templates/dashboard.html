@@ -29,28 +29,26 @@
         <a href="/logout" class="nav-link" style="background: var(--danger);">Logout</a>
       </div>
     </div>
-  </div>
-
-  <div class="content-wrapper">
+   <div class="content-wrapper">
     <!-- Quick Analytics Stats -->
     <div class="stats-grid">
-      <div class="stat-card glass-card c-pending" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+      <div class="stat-card glass-card c-pending" onclick="window.location.href='?filter_status=pending&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}#complaints-sec'">
         <div class="val">{{ c.total_pending }}</div>
         <div class="lbl">Pending Complaints</div>
       </div>
-      <div class="stat-card glass-card c-certs" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+      <div class="stat-card glass-card c-certs" onclick="window.location.href='#cert-requests'">
         <div class="val">{{ c.cert_pending }}</div>
         <div class="lbl">Cert Requests</div>
       </div>
-      <div class="stat-card glass-card c-resolved" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+      <div class="stat-card glass-card c-resolved" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}#complaints-sec'">
         <div class="val">{{ c.resolved }}</div>
         <div class="lbl">Resolved</div>
       </div>
-      <div class="stat-card glass-card c-works" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+      <div class="stat-card glass-card c-works" onclick="window.location.href='#active-works'">
         <div class="val">{{ c.works }}</div>
         <div class="lbl">Active Works</div>
       </div>
-      <div class="stat-card glass-card c-high" onclick="window.location.href='?filter_status=ALL&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+      <div class="stat-card glass-card c-high" onclick="window.location.href='?filter_status=ALL&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}#complaints-sec'">
         <div class="val">{{ c.high }}</div>
         <div class="lbl">High Priority</div>
       </div>
@@ -81,7 +79,7 @@
     </div>
 
     <!-- Main Complaints Section -->
-    <div class="table-sec glass-card">
+    <div class="table-sec glass-card" id="complaints-sec">
       <div class="table-header">
         <h3>📋 Citizen Complaints</h3>
         <div class="sort-controls">
@@ -161,7 +159,7 @@
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; flex-wrap: wrap;">
       
       <!-- Certificate Requests Panel -->
-      <div class="table-sec glass-card" style="align-self: start;">
+      <div class="table-sec glass-card" id="cert-requests" style="align-self: start;">
         <div class="table-header">
           <h3>📄 Certificate Requests</h3>
         </div>
@@ -223,7 +221,7 @@
       </div>
 
       <!-- Development Works Panel -->
-      <div class="table-sec glass-card" style="align-self: start;">
+      <div class="table-sec glass-card" id="active-works" style="align-self: start;">
         <div class="table-header">
           <h3>🛠️ Active Development Works</h3>
         </div>

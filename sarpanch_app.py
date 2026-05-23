@@ -426,7 +426,8 @@ def send_whatsapp_message(to_number, message):
 # ── Menus and Constants ──────────────────────────────────────
 WELCOME_MENU = (
     "Welcome to Kolukonda Gram Panchayat Portal! 🙏\n"
-    "[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం!]\n\n"
+    "Sarpanch: Kothi Sravanthi Praveen\n"
+    "[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం! సర్పంచ్: కోతి స్రవంతి ప్రవీణ్]\n\n"
     "1. Register Complaint [Telugu: ఫిర్యాదు నమోదు]\n"
     "2. Request Certificate [Telugu: ధృవీకరణ పత్రం కొరకు]\n"
     "3. Check Status [Telugu: స్థితిని తనిఖీ చేయండి]\n"
@@ -882,22 +883,18 @@ def profile():
    
     username = session['sarpanch_username']
     user = get_sarpanch_by_username(username)
-   
     if request.method == "POST":
         if 'photo' in request.files:
             file = request.files['photo']
-            if file and allowed_file(file.filename):
-                # Delete old photo if exists
-                if user and user.get('photo'):
-                    old_photo_path = os.path.join(app.root_path, user['photo'].lstrip('/'))
-                    if os.path.exists(old_photo_path):
-                        os.remove(old_photo_path)
-                
-                filename = secure_filename(f"{username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
-                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-                file.save(filepath)
-                update_sarpanch_photo(username, f"/static/uploads/{filename}")
-                session['sarpanch_photo'] = f"/static/uploads/{filename}"
+            if file and file.filename != '':
+                import base64
+                file_bytes = file.read()
+                if file_bytes:
+                    base64_data = base64.b64encode(file_bytes).decode('utf-8')
+                    mime_type = file.mimetype or "image/jpeg"
+                    data_uri = f"data:{mime_type};base64,{base64_data}"
+                    update_sarpanch_photo(username, data_uri)
+                    session['sarpanch_photo'] = data_uri
        
         phone = request.form.get("phone", "")
         email = request.form.get("email", "")
