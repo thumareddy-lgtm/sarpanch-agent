@@ -428,11 +428,13 @@ WELCOME_MENU = (
     "Welcome to Kolukonda Gram Panchayat Portal! 🙏\n"
     "Sarpanch: Kothi Sravanthi Praveen\n"
     "[Telugu: కొలుకొండ గ్రామ పంచాయతీకి స్వాగతం! సర్పంచ్: కోతి స్రవంతి ప్రవీణ్]\n\n"
-    "1. Register Complaint [Telugu: ఫిర్యాదు నమోదు]\n"
-    "2. Request Certificate [Telugu: ధృవీకరణ పత్రం కొరకు]\n"
-    "3. Check Status [Telugu: స్థితిని తనిఖీ చేయండి]\n"
-    "4. View Schemes [Telugu: పథకాలను వీక్షించండి]\n"
-    "5. Contact Ward [Telugu: వార్డు సంప్రదించండి]"
+    "1. Register Complaint [Telugu: ఫిర్యాదు నమోదు చేయండి]\n"
+    "2. Request Certificate [Telugu: సర్టిఫికేట్ అభ్యర్థించండి]\n"
+    "3. Track Status [Telugu: ఫిర్యాదు స్థితి తెలుసుకోండి]\n"
+    "4. Government Schemes [Telugu: ప్రభుత్వ పథకాలు]\n"
+    "5. Development Works [Telugu: అభివృద్ధి పనులు]\n"
+    "6. Announcements [Telugu: ప్రకటనలు]\n"
+    "7. Office Info [Telugu: కార్యాలయ సమాచారం]"
 )
 
 MENU_EN = WELCOME_MENU
@@ -485,14 +487,14 @@ def bot_reply(user_msg, ctx, media_info=None):
     if state == "idle":
         if ml == "1":
             ctx["state"] = "c_name"
-            return "📝 *Register Complaint [ఫిర్యాదు నమోదు]*\n\nPlease enter your full name [దయచేసి మీ పూర్తి పేరు టైప్ చేయండి]:", ctx
+            return "📝 *Register Complaint [ఫిర్యాదు నమోదు చేయండి]*\n\nPlease enter your full name [దయచేసి మీ పూర్తి పేరు టైప్ చేయండి]:", ctx
         elif ml == "2":
             cats = "\n".join(f"{k}. {v}" for k, v in CERT_TYPES.items())
             ctx["state"] = "cert_type"
             return f"📋 *Select Certificate Type [ధృవీకరణ పత్రం రకం ఎంచుకోండి]*:\n\n{cats}", ctx
         elif ml == "3":
             ctx["state"] = "track_id"
-            return "🔍 *Check Status [స్థితిని తనిఖీ చేయండి]*\n\nPlease enter your Reference ID (e.g., CMP-XXXXX or CERT-XXXXX) [దయచేసి మీ రిఫరెన్స్ ID టైప్ చేయండి]:", ctx
+            return "🔍 *Track Status [ఫిర్యాదు స్థితి తెలుసుకోండి]*\n\nPlease enter your Reference ID (e.g., CMP-XXXXX or CERT-XXXXX) [దయచేసి మీ రిఫరెన్స్ ID టైప్ చేయండి]:", ctx
         elif ml == "4":
             schemes_list = [
                 "• *Mahalakshmi Scheme [మహాలక్ష్మి పథకం]*: ₹2500/month financial assistance to women [మహిళా కుటుంబ అధినేతలకు నెలకు ₹2500 ఆర్థిక సహాయం]",
@@ -504,11 +506,52 @@ def bot_reply(user_msg, ctx, media_info=None):
             schemes_text = "\n\n".join(schemes_list)
             return f"📋 *Government Schemes [ప్రభుత్వ పథకాలు]*:\n\n{schemes_text}\n\nType *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]", {"state": "idle", "lang": lang}
         elif ml == "5":
+            works_list = active_works()
+            if works_list:
+                items = []
+                for w in works_list:
+                    status_te = "ప్రగతిలో ఉంది" if w.get('status') == "in_progress" else "ప్రారంభం కాలేదు"
+                    items.append(f"• *{w['title']}* - {w['status'].title()} [{status_te}]")
+                works_text = "\n".join(items)
+            else:
+                works_text = (
+                    "• *CC Road Construction [సీసీ రోడ్డు నిర్మాణం]* - In Progress [ప్రగతిలో ఉంది]\n"
+                    "• *Gram Panchayat Building Painting [గ్రామ పంచాయతీ భవనం రంగులు వేయడం]* - In Progress [ప్రగతిలో ఉంది]\n"
+                    "• *Overhead Water Tank Repair [ఓవర్ హెడ్ వాటర్ ట్యాంక్ మరమ్మతు]* - Pending [ప్రారంభం కాలేదు]"
+                )
             return (
-                "📞 *Ward & Gram Panchayat Contacts [వార్డు & గ్రామ పంచాయతీ సంప్రదింపులు]*:\n\n"
+                f"🏗️ *Development Works [అభివృద్ధి పనులు]*:\n\n"
+                f"{works_text}\n\n"
+                f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]."
+            ), {"state": "idle", "lang": lang}
+        elif ml == "6":
+            anns = all_announcements()
+            if anns:
+                items = []
+                for a in anns[:5]:
+                    items.append(f"📢 *{a['title']}* ({a['date']})\n{a['body']}")
+                anns_text = "\n\n".join(items)
+            else:
+                anns_text = (
+                    "📢 *Gram Sabha Meeting [గ్రామ సభ సమావేశం]* (2026-05-20)\n"
+                    "All citizens are requested to attend the Gram Sabha meeting on 25th May at 10 AM at GP Office.\n"
+                    "[గ్రామస్తులందరూ మే 25న ఉదయం 10 గంటలకు గ్రామ పంచాయతీ కార్యాలయంలో జరిగే గ్రామ సభ సమావేశానికి హాజరుకావలసిందిగా ప్రార్థన.]\n\n"
+                    "📢 *Drinking Water Supply Timings [త్రాగునీటి సరఫరా వేళలు]* (2026-05-18)\n"
+                    "Water supply will be provided from 6 AM to 8 AM daily. Please cooperate.\n"
+                    "[ప్రтиరోజూ ఉదయం 6 నుండి 8 గంటల వరకు నీటి సరఫరా చేయబడుతుంది. దయచేసి సహకరించండి.]"
+                )
+            return (
+                f"📢 *Announcements [ప్రకటనలు]*:\n\n"
+                f"{anns_text}\n\n"
+                f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]."
+            ), {"state": "idle", "lang": lang}
+        elif ml == "7":
+            return (
+                "📞 *Office Info & Contacts [కార్యాలయ సమాచారం & సంప్రదింపులు]*:\n\n"
                 "• *Sarpanch [సర్పంచ్]*: Kothi Sravanthi Praveen (+91 95001 78059)\n"
-                "• *Ward Member Office [వార్డు సభ్యుల కార్యాలయం]*: +91 99999 88888\n"
-                "• *MRO Office (Jangaon) [MRO కార్యాలయం (జనగామ)]*: +91 94910 22334\n\n"
+                "• *Gram Panchayat Secretary [గ్రామ పంచాయతీ కార్యదర్శి]*: Srikanth (+91 98480 22338)\n"
+                "• *MRO Office (Jangaon) [MRO కార్యాలయం (జనగామ)]*: +91 94910 22334\n"
+                "• *Panchayat Office Address [పంచాయతీ కార్యాలయం చిరునామా]*: Main Road, Kolukonda Village, Jangaon Mandal, Jangaon Dist, Telangana - 506167\n\n"
                 "Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]."
             ), {"state": "idle", "lang": lang}
         else:
