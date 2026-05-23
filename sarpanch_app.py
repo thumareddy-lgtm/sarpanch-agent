@@ -192,6 +192,9 @@ def init_db():
     conn.close()
     print(f"✅ Database ready ({db_type})")
 
+init_db()
+
+
 def insert_complaint(c):
     conn, db_type = get_db()
     cur = conn.cursor()
