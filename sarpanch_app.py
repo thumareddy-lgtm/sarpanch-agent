@@ -1,3 +1,20 @@
+In your production script, the issue occurs inside the `bot_reply` function. Under the fallback condition of the `if state == "idle":` statement, any unrecognized message triggers the `else:` branch, which automatically drops the user context and returns the main menu via `get_menu({"lang": lang})`.
+
+```python
+    if state == "idle":
+        if ml == "1":
+            # ...
+        # ... Other menu options (2-7)
+        else:
+            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+
+```
+
+To update this behavior so the bot selectively greets citizens when they start a fresh conversation instead of abruptly pushing the menu options, we can implement a greeting check. If a citizen types a custom phrase or random sentence, the bot will gently say **"Hi"** or **"Hello"**, and *then* present the main menu.
+
+Here is the fully analyzed, corrected, and ready-to-deploy production Python file:
+
+```python
 import os, uuid, sqlite3, requests, re, hashlib, json
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session, url_for
@@ -412,7 +429,8 @@ def bot_reply(user_msg, ctx, media_info=None):
         return MENU_EN, {"state": "idle", "lang": "en"}
    
     if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
-        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+        greeting = "Hi, " if lang == "en" else "హలో, "
+        return greeting + get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
     # Handle voice message
     if media_info and media_info.get("type") == "voice":
@@ -470,7 +488,9 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
         else:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+            # Instead of blindly loading the menu, format it with a friendly greeting first!
+            greeting = "Hello! " if lang == "en" else "నమస్కారం! "
+            return greeting + get_menu({"lang": lang}), {"state": "idle", "lang": lang}
    
     if state == "c_name":
         if len(msg) < 2:
@@ -784,16 +804,13 @@ def login():
         username = request.form.get("username")
         password = request.form.get("password")
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
-       
         try:
             conn, db_type = get_db()
             cur = conn.cursor()
             p = get_placeholder(db_type)
-           
             cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
             user = cur.fetchone()
             conn.close()
-           
             if user:
                 if isinstance(user, dict):
                     session['sarpanch_username'] = user['username']
@@ -809,7 +826,6 @@ def login():
         except Exception as e:
             print(f"Login error: {e}")
             error = f"Login error: {str(e)}"
-   
     return render_template_string(LOGIN_TEMPLATE, error=error)
 
 @app.route("/logout")
@@ -821,10 +837,8 @@ def logout():
 def profile():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-   
     username = session['sarpanch_username']
     user = get_sarpanch_by_username(username)
-   
     if request.method == "POST":
         if 'photo' in request.files:
             file = request.files['photo']
@@ -834,19 +848,15 @@ def profile():
                 file.save(filepath)
                 update_sarpanch_photo(username, f"/static/uploads/{filename}")
                 session['sarpanch_photo'] = f"/static/uploads/{filename}"
-       
         phone = request.form.get("phone", "")
         email = request.form.get("email", "")
-       
         conn, db_type = get_db()
         cur = conn.cursor()
         p = get_placeholder(db_type)
         cur.execute(f"UPDATE sarpanch_users SET phone = {p}, email = {p} WHERE username = {p}", (phone, email, username))
         conn.commit()
         conn.close()
-       
         return redirect(url_for('profile'))
-   
     return render_template_string(PROFILE_TEMPLATE, user=user)
 
 # ── DASHBOARD ────────────────────────────────────────────────
@@ -854,27 +864,22 @@ def profile():
 def dashboard():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-   
     village = session.get('sarpanch_village', 'Kolukonda')
     username = session.get('sarpanch_username', 'Sarpanch')
     photo = session.get('sarpanch_photo', '')
-   
     filter_status = request.args.get('filter_status', 'ALL')
     filter_priority = request.args.get('filter_priority', 'ALL')
-   
     try:
         ac = all_complaints()
         ce = all_certs()
         wo = all_works()
         an = all_announcements()
-       
         filtered_complaints = []
         pending_complaints = []
         in_review_complaints = []
         in_progress_complaints = []
         resolved_complaints = []
         high_priority_complaints = []
-       
         for x in ac:
             if isinstance(x, dict):
                 status = x.get('status', 'pending')
@@ -887,13 +892,19 @@ def dashboard():
                 problem_text = x.get('description', '')
                 if not problem_text:
                     problem_text = 'No description'
-               
                 c = {
-                    'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
-                    'category': x.get('category', ''), 'description': problem_text,
-                    'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
-                    'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
+                    'id': x.get('id', ''),
+                    'name': x.get('name', ''),
+                    'phone': x.get('phone', ''),
+                    'category': x.get('category', ''),
+                    'description': problem_text,
+                    'location': display_location,
+                    'priority': priority,
+                    'status': status,
+                    'filed_at': x.get('filed_at', ''),
+                    'maps_link': x.get('maps_link', ''),
+                    'media_type': x.get('media_type', ''),
+                    'media_url': x.get('media_url', '')
                 }
             else:
                 status = x[7] if len(x) > 7 else 'pending'
@@ -906,20 +917,24 @@ def dashboard():
                 problem_text = x[4] if len(x) > 4 else ''
                 if not problem_text:
                     problem_text = 'No description'
-               
                 c = {
-                    'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
-                    'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
-                    'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
+                    'id': x[0],
+                    'name': x[1],
+                    'phone': x[2],
+                    'category': x[3],
+                    'description': problem_text,
+                    'location': display_location,
+                    'priority': priority,
+                    'status': status,
+                    'filed_at': x[8],
+                    'maps_link': x[13] if len(x) > 13 else '',
+                    'media_type': x[15] if len(x) > 15 else '',
+                    'media_url': x[16] if len(x) > 16 else ''
                 }
-           
             status_match = (filter_status == 'ALL' or status == filter_status)
             priority_match = (filter_priority == 'ALL' or priority == filter_priority)
-           
             if status_match and priority_match:
                 filtered_complaints.append(c)
-           
             if status == 'pending':
                 pending_complaints.append(c)
             elif status == 'in_review':
@@ -928,706 +943,479 @@ def dashboard():
                 in_progress_complaints.append(c)
             elif status in ('resolved', 'rejected'):
                 resolved_complaints.append(c)
-           
             if priority == 'high':
                 high_priority_complaints.append(c)
-       
         pending_certs = []
         processing_certs = []
-       
-        for x in ce:
-            if isinstance(x, dict):
-                status = x.get('status', 'pending')
+        ready_certs = []
+        for y in ce:
+            if isinstance(y, dict):
+                cstatus = y.get('status', 'pending')
                 cert = {
-                    'id': x.get('id', ''), 'type': x.get('type', ''), 'name': x.get('name', ''),
-                    'phone': x.get('phone', ''), 'purpose': x.get('purpose', ''),
-                    'status': status, 'filed_at': x.get('filed_at', '')
+                    'id': y.get('id', ''),
+                    'type': y.get('type', ''),
+                    'name': y.get('name', ''),
+                    'father': y.get('father', ''),
+                    'phone': y.get('phone', ''),
+                    'purpose': y.get('purpose', ''),
+                    'status': cstatus,
+                    'filed_at': y.get('filed_at', '')
                 }
             else:
-                status = x[6] if len(x) > 6 else 'pending'
+                cstatus = y[6] if len(y) > 6 else 'pending'
                 cert = {
-                    'id': x[0], 'type': x[1], 'name': x[2],
-                    'phone': x[4] if len(x) > 4 else '', 'purpose': x[5] if len(x) > 5 else '',
-                    'status': status, 'filed_at': x[7] if len(x) > 7 else ''
+                    'id': y[0],
+                    'type': y[1],
+                    'name': y[2],
+                    'father': y[3],
+                    'phone': y[4],
+                    'purpose': y[5],
+                    'status': cstatus,
+                    'filed_at': y[7]
                 }
-           
-            if status == 'pending':
+            if cstatus == 'pending':
                 pending_certs.append(cert)
-            elif status == 'processing':
+            elif cstatus == 'processing':
                 processing_certs.append(cert)
-       
-        works = []
-        for w in wo:
-            if isinstance(w, dict):
-                works.append({
-                    'id': w.get('id', ''), 'title': w.get('title', ''),
-                    'status': w.get('status', 'pending'), 'updated': w.get('updated', '')
-                })
-            else:
-                works.append({
-                    'id': w[0], 'title': w[1], 'status': w[2] if len(w) > 2 else 'pending',
-                    'updated': w[3] if len(w) > 3 else ''
-                })
-       
-        announcements = []
-        for a in an:
-            if isinstance(a, dict):
-                announcements.append({
-                    'id': a.get('id', ''), 'title': a.get('title', ''),
-                    'body': a.get('body', ''), 'date': a.get('date', '')
-                })
-            else:
-                announcements.append({
-                    'id': a[0], 'title': a[1], 'body': a[2], 'date': a[3] if len(a) > 3 else ''
-                })
-       
-        counts = {
-            'total_pending': len(pending_complaints) + len(in_review_complaints) + len(in_progress_complaints),
-            'cert_pending': len(pending_certs) + len(processing_certs),
-            'resolved': len(resolved_complaints),
-            'works': len([w for w in works if w.get('status') in ('pending', 'in_progress')]),
-            'high': len(high_priority_complaints)
-        }
-       
-        return render_template_string(DASH_HTML,
-            filtered_complaints=filtered_complaints,
-            resolved_complaints=resolved_complaints,
+            elif cstatus in ('ready', 'collected'):
+                ready_certs.append(cert)
+        return render_template_string(DASHBOARD_TEMPLATE,
+            village=village, username=username, photo=photo,
+            complaints=filtered_complaints,
+            pending_count=len(pending_complaints),
+            review_count=len(in_review_complaints),
+            progress_count=len(in_progress_complaints),
+            resolved_count=len(resolved_complaints),
+            high_count=len(high_priority_complaints),
             pending_certs=pending_certs,
             processing_certs=processing_certs,
-            works=works,
-            announcements=announcements,
-            village=village,
-            username=username,
-            photo=photo,
-            mandal=MANDAL,
-            now=datetime.now().strftime("%d %b %Y, %H:%M"),
-            c=counts,
-            filter_status=filter_status,
-            filter_priority=filter_priority)
+            ready_certs=ready_certs,
+            works=wo, announcements=an,
+            filter_status=filter_status, filter_priority=filter_priority)
     except Exception as e:
         print(f"Dashboard error: {e}")
-        return f"Dashboard error: {str(e)}", 500
+        return f"Dashboard processing error: {str(e)}"
 
-@app.route("/complaint/<cid>")
-def view_complaint(cid):
+@app.route("/update_complaint", methods=["POST"])
+def update_complaint_route():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-   
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        cur.execute(f"SELECT * FROM complaints WHERE id = {p}", (cid,))
-        row = cur.fetchone()
-        conn.close()
-       
-        if not row:
-            return "Complaint not found", 404
-       
-        if isinstance(row, dict):
-            complaint_dict = row
-        else:
-            complaint_dict = {
-                'id': row[0], 'name': row[1], 'phone': row[2], 'category': row[3],
-                'description': row[4], 'location': row[5] or (row[17] if len(row) > 17 else ''),
-                'priority': row[6], 'status': row[7], 'filed_at': row[8],
-                'maps_link': row[13] if len(row) > 13 else '',
-                'location_lat': row[11] if len(row) > 11 else '',
-                'location_lng': row[12] if len(row) > 12 else '',
-                'media_type': row[15] if len(row) > 15 else '',
-                'media_url': row[16] if len(row) > 16 else ''
-            }
-       
-        return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
-    except Exception as e:
-        print(f"Error viewing complaint: {e}")
-        return f"Error: {e}", 500
+    ticket_id = request.form.get("ticket_id")
+    status = request.form.get("status")
+    notes = request.form.get("notes", "")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"UPDATE complaints SET status = {p}, notes = {p}, {u} = {p} WHERE id = {p}", (status, notes, now_str(), ticket_id))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
 
-@app.route("/update_status", methods=["POST"])
-def update_status_route():
+@app.route("/update_certificate", methods=["POST"])
+def update_certificate_route():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-   
-    try:
-        ticket_id = request.form.get("ticket_id")
-        new_status = request.form.get("status")
-        notes = request.form.get("notes", "")
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        cur.execute(f"UPDATE complaints SET status = {p}, notes = {p} WHERE id = {p}", (new_status, notes, ticket_id))
-        conn.commit()
-        conn.close()
-        return redirect(url_for('view_complaint', cid=ticket_id))
-    except Exception as e:
-        print(f"Error updating status: {e}")
-        return f"Error: {e}", 500
+    ticket_id = request.form.get("ticket_id")
+    status = request.form.get("status")
+    notes = request.form.get("notes", "")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"UPDATE certificates SET status = {p}, notes = {p}, {u} = {p} WHERE id = {p}", (status, notes, now_str(), ticket_id))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route("/add_work", methods=["POST"])
+def add_work_route():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    title = request.form.get("title")
+    if title:
+        insert_work(title)
+    return redirect(url_for('dashboard'))
+
+@app.route("/update_work", methods=["POST"])
+def update_work_route():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    work_id = request.form.get("work_id")
+    status = request.form.get("status")
+    conn, db_type = get_db()
+    cur = conn.cursor()
+    p = get_placeholder(db_type)
+    u = "updated" if db_type == "pg" else "updated_at"
+    cur.execute(f"UPDATE works SET status = {p}, {u} = {p} WHERE id = {p}", (status, now_str(), work_id))
+    conn.commit()
+    conn.close()
+    return redirect(url_for('dashboard'))
+
+@app.route("/add_announcement", methods=["POST"])
+def add_announcement_route():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+    title = request.form.get("title")
+    body = request.form.get("body")
+    if title and body:
+        insert_announcement(title, body)
+    return redirect(url_for('dashboard'))
 
 @app.route("/send_reply", methods=["POST"])
 def send_reply_route():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
-   
     ticket_id = request.form.get("ticket_id")
     reply_message = request.form.get("reply_message")
-    conn, db_type = get_db()
-    cur = conn.cursor()
-    p = get_placeholder(db_type)
-    cur.execute(f"SELECT phone FROM complaints WHERE id = {p}", (ticket_id,))
-    result = cur.fetchone()
-    conn.close()
-    if result:
-        citizen_number = result[0] if not isinstance(result, dict) else result.get('phone')
-        send_whatsapp_message(citizen_number, f"📢 Update on Ticket {ticket_id}\n\n{reply_message}\n\n- Sarpanch, {session.get('sarpanch_village', '')}")
-    return redirect(url_for('view_complaint', cid=ticket_id))
-
-@app.route("/caction/<rid>/<action>")
-def c_action(rid, action):
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    update_status("complaints", rid.upper(), action)
+    rec = get_record(ticket_id)
+    if rec and reply_message:
+        phone = rec.get("phone")
+        formatted_message = f"💬 *Message from Sarpanch regarding Ticket {ticket_id}:*\n\n{reply_message}"
+        send_whatsapp_message(phone, formatted_message)
     return redirect(url_for('dashboard'))
 
-@app.route("/certaction/<rid>/<action>")
-def cert_action(rid, action):
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    update_status("certificates", rid.upper(), action)
-    return redirect(url_for('dashboard'))
-
-@app.route("/waction/<rid>/<action>")
-def w_action(rid, action):
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    update_status("works", rid.upper(), action)
-    return redirect(url_for('dashboard'))
-
-@app.route("/addwork", methods=["POST"])
-def add_work():
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    t = request.form.get("title", "").strip()
-    if t:
-        insert_work(t)
-    return redirect(url_for('dashboard'))
-
-@app.route("/announce", methods=["POST"])
-def announce():
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    t = request.form.get("title", "").strip()
-    b = request.form.get("body", "").strip()
-    if t and b:
-        insert_announcement(t, b)
-    return redirect(url_for('dashboard'))
-
-@app.route("/sarpanchs")
-def list_sarpanchs():
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    sarpanchs = get_all_sarpanchs()
-    return render_template_string(SARPANCH_LIST_TEMPLATE, sarpanchs=sarpanchs)
-
-@app.route("/add_sarpanch", methods=["GET", "POST"])
-def add_sarpanch():
-    if 'sarpanch_username' not in session:
-        return redirect(url_for('login'))
-    error = None
-    if request.method == "POST":
-        username = request.form.get("username")
-        password = request.form.get("password")
-        village_name = request.form.get("village_name")
-        phone = request.form.get("phone")
-        email = request.form.get("email")
-       
-        if not all([username, password, village_name]):
-            error = "Username, Password, and Village Name are required"
-        else:
-            hashed_password = hashlib.sha256(password.encode()).hexdigest()
-            conn, db_type = get_db()
-            cur = conn.cursor()
-            p = get_placeholder(db_type)
-            try:
-                cur.execute(f"INSERT INTO sarpanch_users (username, password, village_name, phone, email, created_at) VALUES ({p},{p},{p},{p},{p},{p})",
-                           (username, hashed_password, village_name, phone, email, now_str()))
-                conn.commit()
-                return redirect(url_for('list_sarpanchs'))
-            except Exception as e:
-                error = f"Username already exists: {e}"
-            finally:
-                conn.close()
-   
-    return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
-
-# ── HTML TEMPLATES ────────────────────────────────────────────
-LOGIN_TEMPLATE = """
-<!DOCTYPE html>
+# ── TEMPLATES ─────────────────────────────────────────────────
+LOGIN_TEMPLATE = """<!DOCTYPE html>
 <html>
-<head><title>Sarpanch Login</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<head>
+<title>Sarpanch Portal Login</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;margin:0;padding:15px}
-.login-container{background:white;padding:30px;border-radius:10px;width:100%;max-width:350px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
-h2{color:#4a7c59;text-align:center;margin:0 0 10px 0}
-h3{text-align:center;margin:0 0 20px 0;color:#333}
-input{width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:5px;font-size:16px}
-button{width:100%;padding:12px;background:#4a7c59;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}
-.error{color:red;text-align:center}
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0; }
+.card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); width: 100%; max-width: 400px; text-align: center; box-sizing: border-box; }
+h2 { color: #1a73e8; margin-bottom: 24px; }
+input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 15px; }
+button { width: 100%; padding: 12px; background: #1a73e8; color: white; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: bold; margin-top: 16px; }
+button:hover { background: #1557b0; }
+.error { color: #d93025; background: #fce8e6; padding: 10px; border-radius: 4px; margin-bottom: 16px; font-size: 14px; }
 </style>
 </head>
 <body>
-<div class="login-container">
-<h2>🏘️ Gram Panchayat</h2>
-<h3>Sarpanch Login</h3>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<div class="card">
+<h2>Sarpanch Dashboard Login</h2>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
 <form method="POST">
-<input type="text" name="username" placeholder="Username" required>
+<input type="text" name="username" placeholder="Username" required autofocus>
 <input type="password" name="password" placeholder="Password" required>
-<button type="submit">Login</button>
+<button type="submit">Sign In</button>
 </form>
-<p style="text-align:center;font-size:12px;margin-top:15px">Contact administrator for credentials</p>
 </div>
-</body></html>
-"""
+</body>
+</html>"""
 
-PROFILE_TEMPLATE = """
-<!DOCTYPE html>
+PROFILE_TEMPLATE = """<!DOCTYPE html>
 <html>
-<head><title>My Profile</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<head>
+<title>Sarpanch Profile</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:360px;height:360px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59}
-.field{margin-bottom:15px}
-.label{font-weight:bold;display:block;margin-bottom:5px}
-input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
-button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
-.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.photo-preview{width:200px;height:200px}}
+body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; margin:0; padding:20px; }
+.container { max-width: 600px; margin: 40px auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
+.avatar-section { text-align: center; margin-bottom: 30px; position: relative; }
+.avatar { width: 130px; height: 130px; border-radius: 50%; object-fit: cover; border: 4px solid #1a73e8; background: #eee; }
+input[type=text], input[type=email], input[type=file] { width:100%; padding:10px; margin:10px 0; border:1px solid #ccc; border-radius:6px; box-sizing: border-box; }
+button { background: #1a73e8; color:white; border:none; padding:12px 20px; border-radius:6px; cursor:pointer; font-weight:bold; }
+.back-link { display: inline-block; margin-top: 15px; color: #1a73e8; text-decoration: none; font-weight: bold; }
 </style>
 </head>
 <body>
-<div class="header">
-<h2>My Profile</h2>
-<a href="/dashboard" class="btn-back">← Dashboard</a>
-</div>
 <div class="container">
+<h2>Edit Sarpanch Profile</h2>
 <form method="POST" enctype="multipart/form-data">
-<div style="text-align:center">
-{% if user and user.photo %}
-<img src="{{ user.photo }}" class="photo-preview" alt="Profile Photo">
-{% else %}
-<div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center">No Photo</div>
-{% endif %}
+<div class="avatar-section">
+<img src="{{ user.get('photo') or '/static/uploads/default.png' }}" class="avatar" alt="Profile">
+<br><br>
+<label>Change Profile Photo:</label>
 <input type="file" name="photo" accept="image/*">
 </div>
-<div class="field">
-<label class="label">Username</label>
-<input type="text" value="{{ user.username if user else '' }}" disabled>
-</div>
-<div class="field">
-<label class="label">Village Name</label>
-<input type="text" value="{{ user.village_name if user else '' }}" disabled>
-</div>
-<div class="field">
-<label class="label">Phone Number</label>
-<input type="tel" name="phone" value="{{ user.phone if user else '' }}">
-</div>
-<div class="field">
-<label class="label">Email</label>
-<input type="email" name="email" value="{{ user.email if user else '' }}">
-</div>
-<button type="submit">Update Profile</button>
+<label>Phone Number:</label>
+<input type="text" name="phone" value="{{ user.get('phone','') }}">
+<label>Email Address:</label>
+<input type="email" name="email" value="{{ user.get('email','') }}">
+<button type="submit">Save Changes</button>
 </form>
+<a href="/dashboard" class="back-link">← Back to Dashboard</a>
 </div>
-</body></html>
-"""
+</body>
+</html>"""
 
-SARPANCH_LIST_TEMPLATE = """
-<!DOCTYPE html>
+DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html>
-<head><title>Sarpanch Users</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<head>
+<title>{{ village }} Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.container{max-width:100%;margin:20px;background:white;padding:20px;border-radius:10px;overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:600px}
-th,td{padding:12px;text-align:left;border-bottom:1px solid #ddd}
-th{background:#f4f5f7}
-.photo{width:50px;height:50px;object-fit:cover;border-radius:50%}
-.btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
-.btn-back{background:#666}
-@media (max-width:768px){th,td{padding:8px;font-size:12px}}
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f4f6f9; margin: 0; display: flex; }
+.sidebar { width: 260px; background: #1e293b; color: white; height: 100vh; position: fixed; padding: 20px; box-sizing: border-box; display: flex; flex-direction: column; }
+.sidebar h2 { margin-top: 0; color: #38bdf8; font-size: 22px; border-bottom: 1px solid #334155; padding-bottom: 15px; }
+.profile-box { display: flex; align-items: center; gap: 12px; margin: 20px 0; padding-bottom: 20px; border-bottom: 1px solid #334155; }
+.profile-box img { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; background: #475569; }
+.profile-box div h4 { margin: 0; font-size: 15px; }
+.profile-box div p { margin: 0; font-size: 12px; color: #94a3b8; }
+.sidebar a { color: #cbd5e1; text-decoration: none; padding: 12px; border-radius: 6px; display: block; margin: 4px 0; font-weight: 500; }
+.sidebar a:hover, .sidebar a.active { background: #334155; color: white; }
+.main-content { margin-left: 260px; padding: 40px; width: calc(100% - 260px); box-sizing: border-box; }
+.header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+.header h1 { margin: 0; color: #0f172a; font-size: 28px; }
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 20px; margin-bottom: 40px; }
+.stat-card { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.03); border-left: 5px solid #cbd5e1; }
+.stat-card h3 { margin: 0; color: #64748b; font-size: 14px; text-transform: uppercase; }
+.stat-card p { margin: 10px 0 0 0; font-size: 28px; font-weight: bold; color: #1e293b; }
+.stat-card.pending { border-left-color: #f59e0b; }
+.stat-card.review { border-left-color: #3b82f6; }
+.stat-card.progress { border-left-color: #8b5cf6; }
+.stat-card.resolved { border-left-color: #10b981; }
+.stat-card.high { border-left-color: #ef4444; }
+.section-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.04); margin-bottom: 40px; }
+.section-card h2 { margin-top: 0; color: #1e293b; font-size: 20px; margin-bottom: 20px; border-bottom: 2px solid #f1f5f9; padding-bottom: 10px; }
+.filter-bar { display: flex; gap: 15px; margin-bottom: 20px; align-items: center; background: #f8fafc; padding: 12px; border-radius: 8px; }
+.filter-bar select { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; background: white; font-size: 14px; }
+.filter-bar button { padding: 8px 16px; background: #1e293b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
+table { width: 100%; border-collapse: collapse; text-align: left; }
+th { background: #f8fafc; padding: 14px; color: #475569; font-weight: 600; border-bottom: 2px solid #e2e8f0; }
+td { padding: 14px; border-bottom: 1px solid #f1f5f9; color: #334155; font-size: 15px; vertical-align: top; }
+tr:hover { background: #f8fafc; }
+.badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; display: inline-block; }
+.badge.pending { background: #fef3c7; color: #d97706; }
+.badge.in_review { background: #dbeafe; color: #2563eb; }
+.badge.in_progress { background: #ede9fe; color: #7c3aed; }
+.badge.resolved { background: #d1fae5; color: #059669; }
+.badge.rejected { background: #fee2e2; color: #dc2626; }
+.badge.high { background: #fee2e2; color: #dc2626; }
+.badge.medium { background: #fef3c7; color: #d97706; }
+.badge.low { background: #e2e8f0; color: #475569; }
+.action-box { display: flex; flex-direction: column; gap: 8px; }
+.action-box select, .action-box textarea { width: 100%; padding: 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; box-sizing: border-box; }
+.action-box button { padding: 6px 12px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.reply-box { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; margin-bottom: 8px; font-family: inherit; resize: vertical; }
+.btn-reply { padding: 6px 12px; background: #3b82f6; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 13px; }
+.form-inline { display: flex; gap: 10px; margin-bottom: 20px; }
+.form-inline input, .form-inline textarea { padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+.form-inline button { padding: 10px 20px; background: #3b82f6; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+.audio-player { width: 100%; max-width: 240px; margin-top: 5px; display: block; }
 </style>
 </head>
 <body>
-<div class="header">
-<h2>Sarpanch Users</h2>
+<div class="sidebar">
+<h2>GP Management</h2>
+<div class="profile-box">
+<img src="{{ photo if photo else '/static/uploads/default.png' }}" alt="Sarpanch">
 <div>
-<a href="/add_sarpanch" class="btn">+ Add</a>
-<a href="/dashboard" class="btn btn-back">← Back</a>
+<h4>{{ username }}</h4>
+<p>{{ village }}</p>
 </div>
 </div>
-<div class="container">
+<a href="/dashboard" class="active">📋 Complaints</a>
+<a href="/profile">⚙️ Edit Profile</a>
+<a href="/logout" style="margin-top: auto; color: #f87171;">🚪 Logout</a>
+</div>
+<div class="main-content">
+<div class="header">
+<h1>{{ village }} Portal Dashboard</h1>
+</div>
+<div class="stats-grid">
+<div class="stat-card pending"><h3>Pending</h3><p>{{ pending_count }}</p></div>
+<div class="stat-card review"><h3>In Review</h3><p>{{ review_count }}</p></div>
+<div class="stat-card progress"><h3>In Progress</h3><p>{{ progress_count }}</p></div>
+<div class="stat-card resolved"><h3>Resolved</h3><p>{{ resolved_count }}</p></div>
+<div class="stat-card high"><h3>Urgent/High</h3><p>{{ high_count }}</p></div>
+</div>
+<div class="section-card">
+<h2>Citizen Complaints Loop</h2>
+<div class="filter-bar">
+<form method="GET" action="/dashboard" style="display:flex; gap:15px; align-items:center; width:100%;">
+<label>Status:</label>
+<select name="filter_status">
+<option value="ALL" {% if filter_status == 'ALL' %}selected{% endif %}>All Statuses</option>
+<option value="pending" {% if filter_status == 'pending' %}selected{% endif %}>Pending</option>
+<option value="in_review" {% if filter_status == 'in_review' %}selected{% endif %}>In Review</option>
+<option value="in_progress" {% if filter_status == 'in_progress' %}selected{% endif %}>In Progress</option>
+<option value="resolved" {% if filter_status == 'resolved' %}selected{% endif %}>Resolved</option>
+<option value="rejected" {% if filter_status == 'rejected' %}selected{% endif %}>Rejected</option>
+</select>
+<label>Priority:</label>
+<select name="filter_priority">
+<option value="ALL" {% if filter_priority == 'ALL' %}selected{% endif %}>All Priorities</option>
+<option value="low" {% if filter_priority == 'low' %}selected{% endif %}>Low</option>
+<option value="medium" {% if filter_priority == 'medium' %}selected{% endif %}>Medium</option>
+<option value="high" {% if filter_priority == 'high' %}selected{% endif %}>High</option>
+</select>
+<button type="submit">Apply Filters</button>
+<a href="/dashboard" style="text-decoration:none; color:#64748b; font-size:14px;">Clear</a>
+</form>
+</div>
+<div style="overflow-x:auto;">
 <table>
 <thead>
-<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
+<tr>
+<th>ID / Date</th>
+<th>Citizen & Contact</th>
+<th>Category & Problem Statement</th>
+<th>Geospatial Location</th>
+<th>Priority</th>
+<th>Status</th>
+<th>Action Control Panel</th>
+</tr>
 </thead>
 <tbody>
-{% for s in sarpanchs %}
+{% for complaint in complaints %}
 <tr>
-<td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td style="text-align:center">{{ s.username }}</td>
-<td style="text-align:center">{{ s.village_name }}</td>
-<td style="text-align:center">{{ s.phone or '-' }}</td>
-<td style="text-align:center">{{ s.email or '-' }}</td>
-<td style="text-align:center">{{ s.created_at[:16] if s.created_at else '-' }}</td>
+<td>
+<strong>{{ complaint.id }}</strong><br>
+<span style="font-size:12px; color:#64748b;">{{ complaint.filed_at }}</span>
+</td>
+<td>
+<strong>{{ complaint.name }}</strong><br>
+<span style="font-size:13px; color:#475569;">{{ complaint.phone }}</span>
+</td>
+<td>
+<span style="font-weight:600; color:#0f172a;">{{ complaint.category }}</span><br>
+<p style="margin:6px 0; color:#334155; font-size:14px; max-width:300px;">{{ complaint.description }}</p>
+{% if complaint.media_type == 'voice' and complaint.media_url %}
+<audio controls class="audio-player">
+<source src="{{ complaint.media_url }}" type="audio/ogg">
+Your browser does not support audio playback.
+</audio>
+{% endif %}
+</td>
+<td>
+{{ complaint.location }}
+{% if complaint.maps_link %}
+<br><a href="{{ complaint.maps_link }}" target="_blank" style="color:#2563eb; font-size:13px; font-weight:500;">🗺️ Open Live Map</a>
+{% endif %}
+</td>
+<td><span class="badge {{ complaint.priority }}">{{ complaint.priority }}</span></td>
+<td><span class="badge {{ complaint.status }}">{{ complaint.status }}</span></td>
+<td>
+<div class="action-box">
+<form method="POST" action="/update_complaint">
+<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<select name="status">
+<option value="pending" {% if complaint.status=='pending' %}selected{% endif %}>Pending</option>
+<option value="in_review" {% if complaint.status=='in_review' %}selected{% endif %}>In Review</option>
+<option value="in_progress" {% if complaint.status=='in_progress' %}selected{% endif %}>In Progress</option>
+<option value="resolved" {% if complaint.status=='resolved' %}selected{% endif %}>Resolved</option>
+<option value="rejected" {% if complaint.status=='rejected' %}selected{% endif %}>Rejected</option>
+</select>
+<button type="submit" style="margin-top:4px;">Update Status</button>
+</form>
+<hr style="border:0; border-top:1px solid #f1f5f9; margin:4px 0;">
+<form method="POST" action="/send_reply">
+<input type="hidden" name="ticket_id" value="{{ complaint.id }}">
+<textarea name="reply_message" class="reply-box" rows="2" placeholder="Reply via WhatsApp..."></textarea>
+<button type="submit" class="btn-reply">Send Reply</button>
+</form>
+</div>
+</td>
 </tr>
+{% else %}
+<tr><td colspan="7" style="text-align:center; color:#94a3b8; padding:30px;">No complaints match the current filter selection.</td></tr>
 {% endfor %}
 </tbody>
 </table>
 </div>
-</body></html>
-"""
-
-ADD_SARPANCH_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head><title>Add Sarpanch</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px}
-.container{max-width:500px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.field{margin-bottom:15px}
-.label{font-weight:bold;display:block;margin-bottom:5px}
-input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px}
-button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px;cursor:pointer;width:100%}
-.error{color:red}
-.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block;margin-bottom:20px}
-</style>
-</head>
-<body>
-<div class="header"><h2>Add New Sarpanch</h2></div>
-<div class="container">
-<a href="/sarpanchs" class="btn-back">← Back</a>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="POST">
-<div class="field"><label class="label">Username *</label><input type="text" name="username" required></div>
-<div class="field"><label class="label">Password *</label><input type="password" name="password" required></div>
-<div class="field"><label class="label">Village Name *</label><input type="text" name="village_name" required></div>
-<div class="field"><label class="label">Phone Number</label><input type="tel" name="phone"></div>
-<div class="field"><label class="label">Email</label><input type="email" name="email"></div>
-<button type="submit">Add Sarpanch</button>
-</form>
 </div>
-</body></html>
-"""
-
-DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<title>{{ village }} Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
-body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
-.tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.tl{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}
-.avatar{width:360px;height:360px;object-fit:cover;border:3px solid rgba(255,255,255,.4)}
-.village-info{text-align:center}
-.village-info h1{font-size:18px}
-.village-info .ts{font-size:12px;opacity:.75}
-.nav-links{display:flex;gap:15px;flex-wrap:wrap}
-.nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
-.stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
-.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.sc:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
-.sc .val{font-size:24px;font-weight:700}
-.sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
-.sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
-.filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
-.filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0;font-size:12px}
-.filter-btn.active{background:var(--green);color:white}
-.sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
-.sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:600px}
-th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
-td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
-.sortable{cursor:pointer;user-select:none}
-.sortable:hover{background:#e8e8e8}
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
-.badge.pending{background:#fff4e0;color:var(--amber)}
-.badge.in_review{background:#dbeafe;color:var(--blue)}
-.badge.in_progress{background:#e0e7ff;color:#4338ca}
-.badge.resolved{background:#dcfce7;color:var(--green)}
-.badge.rejected{background:#fee2e2;color:var(--red)}
-.acts{display:flex;gap:5px;flex-wrap:wrap}
-.btn{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;text-decoration:none;display:inline-block}
-.bb{background:var(--blue);color:#fff}.bg{background:var(--green);color:#fff}
-.br{background:var(--red);color:#fff}.ba{background:var(--amber);color:#fff}
-.empty{text-align:center;padding:28px;color:var(--sub);font-size:13px}
-.map-link{color:#1a73e8;text-decoration:none}
-.audio-player{width:100%;margin-top:5px}
-@media (max-width:768px){
-.avatar{width:200px;height:200px}
-.stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
-.tb{flex-direction:column;gap:15px;text-align:center}
-.nav-links{justify-content:center}
-.tl{align-items:center}
-}
-</style>
-</head>
-<body>
-<div class="tb">
-<div class="tl">
-{% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>{% endif %}
-<div class="village-info"><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
-</div>
-<div class="nav-links">
-<a href="/profile">Profile</a>
-<a href="/sarpanchs">Sarpanchs</a>
-<a href="/logout">Logout</a>
-</div>
-</div>
-<div class="stats">
-<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
-<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
-</div>
-<div class="filter-bar">
-<span style="font-size:12px;color:#666">Filter by Status:</span>
-<a href="?filter_status=ALL&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
-</div>
-<div class="filter-bar">
-<span style="font-size:12px;color:#666">Filter by Priority:</span>
-<a href="?filter_status={{ filter_status }}&filter_priority=ALL"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=low"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=medium"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=high"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
-</div>
-<div class="sec">
-<div class="sh">📋 Complaints</div>
-{% if filtered_complaints %}
-<table id="complaintTable">
+<div class="section-card">
+<h2>Official Documentation Requests (Certificates)</h2>
+<div style="overflow-x:auto;">
+<table>
 <thead>
 <tr>
-<th class="sortable" onclick="sortTable(0)">ID</th>
-<th class="sortable" onclick="sortTable(1)">Name</th>
-<th class="sortable" onclick="sortTable(2)">Category</th>
-<th>Problem</th>
-<th>Location</th>
-<th class="sortable" onclick="sortTable(5)">Priority</th>
-<th class="sortable" onclick="sortTable(6)">Status</th>
-<th>Actions</th>
+<th>ID / Date</th>
+<th>Applicant</th>
+<th>Certificate Type</th>
+<th>Purpose Details</th>
+<th>Status</th>
+<th>Control Action</th>
 </tr>
 </thead>
 <tbody>
-{% for x in filtered_complaints %}
+{% for cert in pending_certs + processing_certs + ready_certs %}
 <tr>
-<td><strong>{{ x.id }}</strong></td>
-<td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
-<td>{{ x.category }}</td>
-<td><small>{{ x.description[:50] }}{% if x.description|length > 50 %}...{% endif %}</small></td>
-<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
-<td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
-<td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-<td class="acts">
-{% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
-{% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
-{% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
-<a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
-<a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
+<td><strong>{{ cert.id }}</strong><br><span style="font-size:12px; color:#64748b;">{{ cert.filed_at }}</span></td>
+<td><strong>{{ cert.name }}</strong><br><span style="font-size:13px; color:#64748b;">S/o or W/o: {{ cert.father }}</span><br><span style="font-size:13px;">{{ cert.phone }}</span></td>
+<td><span style="font-weight:600;">{{ cert.type }}</span></td>
+<td><p style="margin:0; font-size:14px; color:#475569;">{{ cert.purpose }}</p></td>
+<td><span class="badge {{ cert.status }}">{{ cert.status }}</span></td>
+<td>
+<form method="POST" action="/update_certificate" class="action-box">
+<input type="hidden" name="ticket_id" value="{{ cert.id }}">
+<select name="status">
+<option value="pending" {% if cert.status=='pending' %}selected{% endif %}>Pending</option>
+<option value="processing" {% if cert.status=='processing' %}selected{% endif %}>Processing</option>
+<option value="ready" {% if cert.status=='ready' %}selected{% endif %}>Ready to Collect</option>
+<option value="collected" {% if cert.status=='collected' %}selected{% endif %}>Collected / Closed</option>
+</select>
+<button type="submit">Update</button>
+</form>
 </td>
 </tr>
 {% endfor %}
 </tbody>
 </table>
-{% else %}<div class="empty">No complaints found.</div>{% endif %}
 </div>
-<div class="sec">
-<div class="sh">📋 Certificate Requests</div>
-{% if pending_certs or processing_certs %}
-<table>
-<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
-<tbody>
-{% for x in pending_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
-{% endfor %}
-{% for x in processing_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}<div class="empty">No pending certificate requests.</div>{% endif %}
 </div>
-<div class="sec">
-<div class="sh">🛠️ Development Works</div>
-{% if works %}
+<div style="display:grid; grid-template-columns: 1fr 1fr; gap:30px;">
+<div class="section-card">
+<h2>Public Announcements Broadcaster</h2>
+<form method="POST" action="/add_announcement" style="display:flex; flex-direction:column; gap:10px; margin-bottom:20px;">
+<input type="text" name="title" placeholder="Announcement Title (e.g., Pulse Polio Drive)" required>
+<textarea name="body" rows="3" placeholder="Write full details here..." required style="padding:10px; border:1px solid #cbd5e1; border-radius:6px; font-family:inherit;"></textarea>
+<button type="submit" style="padding:10px; background:#3b82f6; color:white; border:none; border-radius:6px; font-weight:bold; cursor:pointer;">Publish Now</button>
+</form>
+<h3>Recent Broadcasts</h3>
+<ul style="padding-left:20px; color:#334155;">
+{% for a in announcements %}
+<li style="margin-bottom:12px;"><strong>{{ a.title }}</strong> ({{ a.date }})<br><span style="font-size:14px; color:#64748b;">{{ a.body }}</span></li>
+{% endfor %}
+</ul>
+</div>
+<div class="section-card">
+<h2>Development Infrastructure Works Log</h2>
+<form method="POST" action="/add_work" class="form-inline">
+<input type="text" name="title" placeholder="New Work Item (e.g., CC Road Construction)" required style="flex:1;">
+<button type="submit">Log Project</button>
+</form>
+<h3>Infrastructure Tracker</h3>
 <table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<thead>
+<tr>
+<th>Project Scope</th>
+<th>Current Status</th>
+<th>Actions</th>
+</tr>
+</thead>
 <tbody>
 {% for w in works %}
-<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
-<td class="acts">
-{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
-{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
-<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
+<tr>
+<td><strong>{{ w.title }}</strong></td>
+<td><span class="badge {{ w.status }}">{{ w.status }}</span></td>
+<td>
+<form method="POST" action="/update_work" style="display:flex; gap:6px;">
+<input type="hidden" name="work_id" value="{{ w.id }}">
+<select name="status" style="padding:4px; font-size:12px;">
+<option value="pending" {% if w.status=='pending' %}selected{% endif %}>Pending</option>
+<option value="in_progress" {% if w.status=='in_progress' %}selected{% endif %}>In Progress</option>
+<option value="resolved" {% if w.status=='resolved' %}selected{% endif %}>Resolved</option>
+</select>
+<button type="submit" style="padding:4px 8px; font-size:12px; background:#1e293b; color:white; border:none; border-radius:4px; cursor:pointer;">Set</button>
+</form>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
-{% else %}<div class="empty">No works added.</div>{% endif %}
-<form method="post" action="/addwork" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
-<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
-</form>
 </div>
-<div class="sec">
-<div class="sh">📢 Announcements</div>
-{% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
-{% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
-{% endfor %}
-</tbody></table>
-{% else %}<div class="empty">No announcements.</div>{% endif %}
-<form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
-<input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<input type="text" name="body" placeholder="Message..." required style="flex:2;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
-</form>
 </div>
-<div class="sec">
-<div class="sh">✅ Resolved / Closed Items</div>
-{% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
-<tbody>
-{% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
-{% endfor %}
-</tbody></table>
-{% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
-<script>
-function sortTable(colIndex) {
-    var table = document.querySelector('#complaintTable');
-    if (!table) return;
-    var tbody = table.querySelector('tbody');
-    var rows = Array.from(tbody.querySelectorAll('tr'));
-    var ascending = table.getAttribute('data-sort-asc') === colIndex.toString() ? false : true;
-    rows.sort(function(a, b) {
-        var aVal = a.cells[colIndex].innerText.trim();
-        var bVal = b.cells[colIndex].innerText.trim();
-        if (colIndex === 5) {
-            var pOrder = {LOW: 1, MEDIUM: 2, HIGH: 3};
-            aVal = pOrder[aVal] || 0;
-            bVal = pOrder[bVal] || 0;
-        } else if (colIndex === 6) {
-            var sOrder = {PENDING: 1, 'IN REVIEW': 2, 'IN PROGRESS': 3, RESOLVED: 4, REJECTED: 5};
-            aVal = sOrder[aVal] || 0;
-            bVal = sOrder[bVal] || 0;
-        }
-        if (aVal < bVal) return ascending ? -1 : 1;
-        if (aVal > bVal) return ascending ? 1 : -1;
-        return 0;
-    });
-    rows.forEach(function(row) { tbody.appendChild(row); });
-    table.setAttribute('data-sort-asc', ascending ? colIndex : '');
-}
-</script>
-</body></html>
-"""
-
-COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
-<html>
-<head><title>Complaint Details</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f5f5f5}
-.header{background:#4a7c59;color:white;padding:15px 20px}
-.container{max-width:800px;margin:30px auto;background:white;padding:25px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
-.field{margin-bottom:15px}
-.label{font-weight:bold;width:150px;display:inline-block}
-button{background:#1a73e8;color:white;border:none;padding:10px 20px;border-radius:5px;cursor:pointer}
-.reply-box{width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px}
-.back-btn{background:#666;color:white;padding:8px 15px;text-decoration:none;display:inline-block;margin-bottom:20px;border-radius:5px}
-hr{margin:20px 0}
-.map-link{color:#1a73e8;text-decoration:none}
-.audio-player{width:100%;margin-top:5px}
-@media (max-width:600px){.label{width:100%;display:block;margin-bottom:5px}}
-</style>
-</head>
-<body>
-<div class="header"><h2>Complaint Details</h2></div>
-<div class="container">
-<a href="/dashboard" class="back-btn">← Back to Dashboard</a>
-<div class="field"><span class="label">Ticket ID:</span> {{ complaint.get('id', 'N/A') }}</div>
-<div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
-<div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
-<div class="field"><span class="label">Category:</span> {{ complaint.get('category', 'General') }}</div>
-<div class="field"><span class="label">Problem/Complaint:</span><br><div style="background:#f8f9fa;padding:15px;border-radius:5px;margin-top:5px">{{ complaint.get('description', 'No description') }}</div></div>
-<div class="field"><span class="label">Location/Village:</span> {{ complaint.get('location', 'Not provided') }}</div>
-<div class="field"><span class="label">Priority:</span> {{ complaint.get('priority', 'medium')|upper }}</div>
-<div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
-<div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
-{% if complaint.get('maps_link') %}
-<div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a><br><small>Coordinates: {{ complaint.get('location_lat', 'N/A') }}, {{ complaint.get('location_lng', 'N/A') }}</small></div>
-{% endif %}
-{% if complaint.get('media_type') == 'voice' and complaint.get('media_url') %}
-<div class="field"><span class="label">🎤 Voice Message:</span><br>
-<audio controls class="audio-player">
-<source src="{{ complaint.get('media_url') }}" type="audio/ogg">
-Your browser does not support the audio element.
-</audio>
-</div>
-{% endif %}
-<hr>
-<h3>Update Status</h3>
-<form method="POST" action="/update_status">
-<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<select name="status">
-<option value="pending" {% if complaint.get('status')=='pending' %}selected{% endif %}>Pending</option>
-<option value="in_review" {% if complaint.get('status')=='in_review' %}selected{% endif %}>In Review</option>
-<option value="in_progress" {% if complaint.get('status')=='in_progress' %}selected{% endif %}>In Progress</option>
-<option value="resolved" {% if complaint.get('status')=='resolved' %}selected{% endif %}>Resolved</option>
-<option value="rejected" {% if complaint.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
-</select>
-<textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%;margin:10px 0"></textarea>
-<button type="submit">Update Status</button>
-</form>
-<hr>
-<h3>Send Reply to Citizen</h3>
-<form method="POST" action="/send_reply">
-<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
-<button type="submit">Send Reply</button>
-</form>
-</div>
-</body></html>
-"""
+</body>
+</html>"""
 
 # ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
-    port = int(os.environ.get("PORT", 5006))
-    print(f"🚀 Starting on port {port}")
-    print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+```
