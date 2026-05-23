@@ -35,11 +35,21 @@ def get_whatsapp_session(sender):
         row = cur.fetchone()
         conn.close()
         if row:
-            val = row[0] if not isinstance(row, dict) else row.get('session_data')
-            return json.loads(val)
+            # Extract session data string with absolute robustness
+            val = None
+            try:
+                val = row['session_data']
+            except:
+                try:
+                    val = row.get('session_data')
+                except:
+                    val = row[0]
+            if val:
+                return json.loads(val)
     except Exception as e:
         print(f"Error fetching session: {e}")
     return {"state": "idle", "lang": "en"}
+
 
 def save_whatsapp_session(sender, session_data):
     try:
