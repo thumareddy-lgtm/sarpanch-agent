@@ -857,11 +857,9 @@ def login():
                 if isinstance(user, dict):
                     session['sarpanch_username'] = user['username']
                     session['sarpanch_village'] = user['village_name']
-                    session['sarpanch_photo'] = user.get('photo', '')
                 else:
                     session['sarpanch_username'] = user[1]
                     session['sarpanch_village'] = user[3]
-                    session['sarpanch_photo'] = user[6] if len(user) > 6 else ''
                 return redirect(url_for('dashboard'))
             else:
                 error = "Invalid username or password"
@@ -894,7 +892,6 @@ def profile():
                     mime_type = file.mimetype or "image/jpeg"
                     data_uri = f"data:{mime_type};base64,{base64_data}"
                     update_sarpanch_photo(username, data_uri)
-                    session['sarpanch_photo'] = data_uri
        
         phone = request.form.get("phone", "")
         email = request.form.get("email", "")
@@ -917,7 +914,8 @@ def dashboard():
    
     village = session.get('sarpanch_village', 'Kolukonda')
     username = session.get('sarpanch_username', 'Sarpanch')
-    photo = session.get('sarpanch_photo', '')
+    user_record = get_sarpanch_by_username(username)
+    photo = user_record.get('photo', '') if user_record else ''
     
     # Get sort parameters
     sort_by = request.args.get('sort_by', 'filed_at')
