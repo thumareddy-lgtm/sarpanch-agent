@@ -169,6 +169,11 @@
     }
   </style>
   <script>
+    // Force browser to always load at the absolute top of the page on refresh (disable native scroll restoration)
+    if (history.scrollRestoration) {
+      history.scrollRestoration = 'manual';
+    }
+
     function showHeaderPlaceholder() {
       document.getElementById('sarpanch-header-img').style.display = 'none';
       document.getElementById('sarpanch-header-placeholder').style.display = 'flex';
