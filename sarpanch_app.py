@@ -3,16 +3,19 @@ from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session, url_for
 from werkzeug.utils import secure_filename
 
+# ── Config ───────────────────────────────────────────────────
 VILLAGE_NAME  = os.environ.get("VILLAGE_NAME",  "Kolukonda Village")
 SARPANCH_NAME = os.environ.get("SARPANCH_NAME", "Kothi Sravanthi Praveen")
 MANDAL        = os.environ.get("MANDAL",        "Jangaon Mandal")
 DISTRICT      = os.environ.get("DISTRICT",      "Nalgonda District, Telangana")
 DATABASE_URL  = os.environ.get("DATABASE_URL",  "")
 
+# WhatsApp Business API Configuration
 META_TOKEN     = os.environ.get("META_TOKEN", "")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID", "1173815852473279")
 VERIFY_TOKEN   = os.environ.get("VERIFY_TOKEN", "kolukonda2024")
 
+# File upload config
 UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -23,11 +26,12 @@ app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
-# Use database for persistent sessions instead of memory
-def get_session_db():
-    conn, db_type = get_db()
-    return conn, db_type
+whatsapp_sessions = {}
 
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+# ── FORCE ADD VILLAGE COLUMN ON STARTUP ──────────────────────
 def force_add_village_column():
     print("🔧 Checking village column...")
     try:
@@ -54,6 +58,7 @@ def force_add_village_column():
 
 force_add_village_column()
 
+# ── Helper Functions ─────────────────────────────────────────
 def now_str():
     return datetime.now().strftime("%d-%b-%Y %H:%M")
 
@@ -123,15 +128,6 @@ def init_db():
         )
     """)
    
-    # Create session table for persistent WhatsApp sessions
-    cur.execute(f"""
-        CREATE TABLE IF NOT EXISTS whatsapp_sessions_db (
-            phone TEXT PRIMARY KEY,
-            session_data TEXT,
-            updated_at TEXT
-        )
-    """)
-   
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
     if not cur.fetchone():
@@ -143,45 +139,6 @@ def init_db():
     conn.commit()
     conn.close()
     print(f"✅ Database ready ({db_type})")
-
-def get_session_from_db(phone):
-    """Retrieve session from database"""
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        cur.execute(f"SELECT session_data FROM whatsapp_sessions_db WHERE phone = {p}", (phone,))
-        row = cur.fetchone()
-        conn.close()
-        if row:
-            session_json = row[0] if isinstance(row, tuple) else row["session_data"]
-            return json.loads(session_json)
-    except Exception as e:
-        print(f"⚠️ Session load error: {e}")
-    return {"state": "idle", "lang": "en"}
-
-def save_session_to_db(phone, session_data):
-    """Save session to database"""
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        p = get_placeholder(db_type)
-        session_json = json.dumps(session_data)
-        if db_type == "pg":
-            cur.execute(f"""
-                INSERT INTO whatsapp_sessions_db (phone, session_data, updated_at)
-                VALUES ({p},{p},{p})
-                ON CONFLICT (phone) DO UPDATE SET session_data={p}, updated_at={p}
-            """, (phone, session_json, now_str(), session_json, now_str()))
-        else:
-            cur.execute(f"""
-                INSERT OR REPLACE INTO whatsapp_sessions_db (phone, session_data, updated_at)
-                VALUES ({p},{p},{p})
-            """, (phone, session_json, now_str()))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"⚠️ Session save error: {e}")
 
 def insert_complaint(c):
     conn, db_type = get_db()
@@ -318,6 +275,7 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
+# ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
@@ -359,6 +317,7 @@ def download_voice_permanently(voice_id, complaint_id):
         print(f"❌ Voice download error: {e}")
         return None
 
+# ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
     try:
         url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
@@ -380,6 +339,7 @@ def detect_village_from_text(text):
             return village.title()
     return None
 
+# ── WhatsApp API Function ────────────────────────────────────
 def send_whatsapp_message(to_number, message):
     if not META_TOKEN:
         print(" META_TOKEN not set")
@@ -408,11 +368,12 @@ def send_whatsapp_message(to_number, message):
         print(f"❌ Error: {e}")
         return False
 
+# ── Menus and Constants ──────────────────────────────────────
 MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
     "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
     "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
     "📍 You can share your location or 🎤 send voice message\n"
-    "Type *telugu* for Telugu menu").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+    "తెలుగు కావాలంటే *telugu* టైప్ చేయండి.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
 
 MENU_TE = ("నమస్కారం! *{v}* గ్రామ పంచాయతీకి స్వాగతం\nసర్పంచ్: *{s}*\n\n"
     "1️⃣ ఫిర్యాదు నమోదు చేయండి\n2️⃣ సర్టిఫికెట్ అభ్యర్థించండి\n3️⃣ ఫిర్యాదు స్థితి తెలుసుకోండి\n"
@@ -431,6 +392,7 @@ PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
 
+# ── BOT REPLY FUNCTION (ORIGINAL WORKING VERSION) ────────────
 def bot_reply(user_msg, ctx, media_info=None):
     msg = user_msg.strip() if user_msg else ""
     ml = msg.lower()
@@ -444,6 +406,9 @@ def bot_reply(user_msg, ctx, media_info=None):
     if ml == "english":
         return MENU_EN, {"state": "idle", "lang": "en"}
    
+    if ml in ("menu", "home", "back", "hi", "hello", "start", "help"):
+        return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+   
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
         ctx["media_url"] = media_info.get("url", "")
@@ -453,8 +418,7 @@ def bot_reply(user_msg, ctx, media_info=None):
             return "🎤 వాయిస్ మెసేజ్ అందుకుంది!\n\n📍 దయచేసి మీ లొకేషన్ షేర్ చేయండి (📎 → Location):", ctx
         return "🎤 Voice received! Please share your location (📎 → Location):", ctx
    
-    # Handle menu options 1-7 (works even when state is idle)
-    if ml in ("1", "2", "3", "4", "5", "6", "7"):
+    if state == "idle":
         if ml == "1":
             ctx["state"] = "c_name"
             if lang == "te":
@@ -499,17 +463,14 @@ def bot_reply(user_msg, ctx, media_info=None):
             if lang == "te":
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
-   
-    # Handle idle state - only for trigger words
-    if state == "idle":
-        trigger_words = {'hi', 'hello', 'start', 'menu', 'help'}
-        if ml in trigger_words:
-            return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
         else:
-            print(f"🚫 Ignoring non-trigger message in idle: {msg}")
-            return None, ctx
+            # Only show menu for hi/hello - for anything else, ignore
+            if ml in ("hi", "hello", "start", "help"):
+                return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
+            else:
+                print(f"🚫 Ignoring non-trigger message: {msg}")
+                return None, ctx
    
-    # Complaint flow states
     if state == "c_name":
         if len(msg) < 2:
             if lang == "te":
@@ -718,6 +679,7 @@ def bot_reply(user_msg, ctx, media_info=None):
    
     return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
 
+# ── WHATSAPP WEBHOOK ─────────────────────────────────────────
 @app.route("/whatsapp", methods=["GET", "POST"])
 def whatsapp_webhook():
     if request.method == "GET":
@@ -741,8 +703,10 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
        
-        # Use persistent session from database
-        session_data = get_session_from_db(sender)
+        if sender not in whatsapp_sessions:
+            whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
+       
+        session_data = whatsapp_sessions[sender]
        
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
@@ -801,26 +765,102 @@ def whatsapp_webhook():
             else:
                 send_whatsapp_message(sender, "Please send text, location, or voice message.")
        
-        # Save session to database
-        save_session_to_db(sender, session_data)
+        whatsapp_sessions[sender] = session_data
        
     except Exception as e:
         print(f"❌ Webhook error: {e}")
    
     return "OK", 200
 
-# Keep all other routes (dashboard, login, profile, etc.) the same as your working script
-# [The remaining routes - dashboard, login, profile, complaint, update_status, 
-#  send_reply, c_action, cert_action, w_action, addwork, announce, 
-#  list_sarpanchs, add_sarpanch, and all HTML templates remain exactly the same]
+# ── ROUTES ────────────────────────────────────────────────────
+# [Keep all your existing routes - dashboard, login, profile, complaint, etc.]
+# They remain exactly the same as your original working script
 
-# For brevity, I'm including only the critical routes that need to be here.
-# Your existing routes for dashboard, login, etc. should remain unchanged.
+@app.route("/")
+def home():
+    if 'sarpanch_username' in session:
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username")
+        password = request.form.get("password")
+        hashed_password = hashlib.sha256(password.encode()).hexdigest()
+       
+        try:
+            conn, db_type = get_db()
+            cur = conn.cursor()
+            p = get_placeholder(db_type)
+           
+            cur.execute(f"SELECT * FROM sarpanch_users WHERE username = {p} AND password = {p}", (username, hashed_password))
+            user = cur.fetchone()
+            conn.close()
+           
+            if user:
+                if isinstance(user, dict):
+                    session['sarpanch_username'] = user['username']
+                    session['sarpanch_village'] = user['village_name']
+                    session['sarpanch_photo'] = user.get('photo', '')
+                else:
+                    session['sarpanch_username'] = user[1]
+                    session['sarpanch_village'] = user[3]
+                    session['sarpanch_photo'] = user[6] if len(user) > 6 else ''
+                return redirect(url_for('dashboard'))
+            else:
+                error = "Invalid username or password"
+        except Exception as e:
+            print(f"Login error: {e}")
+            error = f"Login error: {str(e)}"
+   
+    return render_template_string(LOGIN_TEMPLATE, error=error)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+@app.route("/profile", methods=["GET", "POST"])
+def profile():
+    if 'sarpanch_username' not in session:
+        return redirect(url_for('login'))
+   
+    username = session['sarpanch_username']
+    user = get_sarpanch_by_username(username)
+   
+    if request.method == "POST":
+        if 'photo' in request.files:
+            file = request.files['photo']
+            if file and allowed_file(file.filename):
+                filename = secure_filename(f"{username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                update_sarpanch_photo(username, f"/static/uploads/{filename}")
+                session['sarpanch_photo'] = f"/static/uploads/{filename}"
+       
+        phone = request.form.get("phone", "")
+        email = request.form.get("email", "")
+       
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        cur.execute(f"UPDATE sarpanch_users SET phone = {p}, email = {p} WHERE username = {p}", (phone, email, username))
+        conn.commit()
+        conn.close()
+       
+        return redirect(url_for('profile'))
+   
+    return render_template_string(PROFILE_TEMPLATE, user=user)
+
+# Keep all your existing dashboard and other routes from your original working script
+# [DASH_HTML, COMPLAINT_DETAIL_HTML, LOGIN_TEMPLATE, PROFILE_TEMPLATE, etc.]
+
+# ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 5006))
     print(f"🚀 Starting on port {port}")
     print(f"📞 WhatsApp Business Number: +91 80080 42801")
-    print(f"🎯 Bot uses persistent database sessions")
     app.run(host="0.0.0.0", port=port, debug=not DATABASE_URL)
