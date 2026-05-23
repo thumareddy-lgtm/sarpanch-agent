@@ -383,14 +383,38 @@ MENU_TE = ("నమస్కారం! *{v}* గ్రామ పంచాయత�
 
 COMPLAINT_CATS = {"1":"Road / Pothole","2":"Water Supply","3":"Electricity","4":"Drainage","5":"Ration Shop","6":"Land Dispute","7":"Other"}
 CERT_TYPES = {"1":"Income Certificate","2":"Caste Certificate","3":"Residence Certificate","4":"Birth Certificate","5":"Death Certificate","6":"Agriculture Land Certificate"}
-SCHEMES = [("Rythu Bandhu","₹5000/acre/season for farmers"),("PM Awas Yojana","Free house for BPL families"),
-    ("Aarogyasri","Free medical up to ₹5L/year"),("Kalyana Lakshmi","₹1 lakh for girl marriage"),
-    ("PM Kisan","₹6000/year for farmers"),("NREGA","100 days employment"),("Bhadratha","Free LPG for BPL")]
+
+# Updated Government Schemes with Telugu and Congress schemes
+SCHEMES_EN = [
+    ("Mahalakshmi Scheme", "₹2500/month financial assistance to women heads of families"),
+    ("Gruha Jyothi", "200 units free electricity for eligible households"),
+    ("Anna Bhagya", "10kg free rice per person per month for BPL families"),
+    ("YSR Rythu Bharosa", "₹13,500/acre annual investment support for farmers"),
+    ("YSR Aasara", "Financial assistance to women self-help groups"),
+    ("PM Kisan", "₹6000/year for farmers"),
+    ("Aarogyasri", "Free medical up to ₹5L/year"),
+    ("Rythu Bandhu", "₹5000/acre/season for farmers")
+]
+
+SCHEMES_TE = [
+    ("మహాలక్ష్మి పథకం", "మహిళా కుటుంబ అధినేతలకు నెలకు ₹2500 ఆర్థిక సహాయం"),
+    ("గృహజ్యోతి", "అర్హులైన కుటుంబాలకు 200 యూనిట్ల ఉచిత విద్యుత్"),
+    ("అన్నభాగ్య", "బీపీఎల్ కుటుంబాలకు ప్రతి వ్యక్తికి నెలకు 10 కేజీల ఉచిత బియ్యం"),
+    ("వైఎస్ఆర్ రైతు భరోసా", "రైతులకు ఎకరానికి ₹13,500 వార్షిక పెట్టుబడి సహాయం"),
+    ("వైఎస్ఆర్ ఆసరా", "మహిళా స్వయం సహాయక బృందాలకు ఆర్థిక సహాయం"),
+    ("పీఎం కిసాన్", "రైతులకు సంవత్సరానికి ₹6000"),
+    ("ఆరోగ్యశ్రీ", "సంవత్సరానికి ₹5 లక్షల వరకు ఉచిత వైద్యం"),
+    ("రైతు బంధు", "రైతులకు ఎకరానికి ₹5000/సీజన్")
+]
+
 STATUS_MAP = {"pending":"Pending","in_review":"In Review","in_progress":"In Progress","resolved":"Resolved","rejected":"Rejected","ready":"Ready to Collect","processing":"Processing"}
 PRI_MAP = {"low":"Low","medium":"Medium","high":"High"}
 
 def get_menu(ctx):
     return MENU_TE if ctx.get("lang")=="te" else MENU_EN
+
+def get_schemes(lang):
+    return SCHEMES_TE if lang == "te" else SCHEMES_EN
 
 # ── BOT REPLY FUNCTION ───────────────────────────────────────
 def bot_reply(user_msg, ctx, media_info=None):
@@ -436,10 +460,11 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return "🔍 మీ రిఫరెన్స్ ID టైప్ చేయండి:", ctx
             return "🔍 Enter your Reference ID:", ctx
         elif ml == "4":
-            lines = [f"{n}: {d}" for n, d in SCHEMES]
+            schemes = get_schemes(lang)
+            lines = [f"• {n}: {d}" for n, d in schemes]
             if lang == "te":
-                return "📋 ప్రభుత్వ పథకాలు\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
-            return "📋 Government Schemes\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
+                return "📋 ప్రభుత్వ పథకాలు (కాంగ్రెస్ సర్కార్)\n\n" + "\n".join(lines) + "\n\nమెనూ కోసం *menu* టైప్ చేయండి", {"state": "idle", "lang": lang}
+            return "📋 Government Schemes (Congress Government)\n\n" + "\n".join(lines) + "\n\nType *menu* for main menu", {"state": "idle", "lang": lang}
         elif ml == "5":
             rows = active_works()
             if not rows:
@@ -464,7 +489,6 @@ def bot_reply(user_msg, ctx, media_info=None):
                 return f"🏛️ {VILLAGE_NAME} పంచాయతీ\nసర్పంచ్: {SARPANCH_NAME}\nమండలం: {MANDAL}\nకార్యాలయ సమయాలు: సోమ-శని 10AM-5PM", {"state": "idle", "lang": lang}
             return f"🏛️ {VILLAGE_NAME} Panchayat\nSarpanch: {SARPANCH_NAME}\nMandal: {MANDAL}\nOffice Hours: Mon-Sat 10AM-5PM", {"state": "idle", "lang": lang}
         else:
-            # Only respond to hi/hello in idle, ignore everything else
             if ml in ("hi", "hello", "start", "help"):
                 return get_menu({"lang": lang}), {"state": "idle", "lang": lang}
             else:
@@ -831,6 +855,12 @@ def profile():
         if 'photo' in request.files:
             file = request.files['photo']
             if file and allowed_file(file.filename):
+                # Delete old photo if exists
+                if user and user.get('photo'):
+                    old_photo_path = os.path.join(app.root_path, user['photo'].lstrip('/'))
+                    if os.path.exists(old_photo_path):
+                        os.remove(old_photo_path)
+                
                 filename = secure_filename(f"{username}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}")
                 filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
                 file.save(filepath)
@@ -859,7 +889,11 @@ def dashboard():
     village = session.get('sarpanch_village', 'Kolukonda')
     username = session.get('sarpanch_username', 'Sarpanch')
     photo = session.get('sarpanch_photo', '')
-   
+    
+    # Get sort parameters
+    sort_by = request.args.get('sort_by', 'filed_at')
+    sort_order = request.args.get('sort_order', 'desc')
+    
     filter_status = request.args.get('filter_status', 'ALL')
     filter_priority = request.args.get('filter_priority', 'ALL')
    
@@ -882,6 +916,7 @@ def dashboard():
                 priority = x.get('priority', 'medium')
                 village_name = x.get('village', '')
                 location_text = x.get('location', '')
+                filed_at = x.get('filed_at', '')
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -893,7 +928,7 @@ def dashboard():
                     'id': x.get('id', ''), 'name': x.get('name', ''), 'phone': x.get('phone', ''),
                     'category': x.get('category', ''), 'description': problem_text,
                     'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x.get('filed_at', ''), 'maps_link': x.get('maps_link', ''),
+                    'status': status, 'filed_at': filed_at, 'maps_link': x.get('maps_link', ''),
                     'media_type': x.get('media_type', ''), 'media_url': x.get('media_url', '')
                 }
             else:
@@ -901,6 +936,7 @@ def dashboard():
                 priority = x[6] if len(x) > 6 else 'medium'
                 village_name = x[17] if len(x) > 17 else ''
                 location_text = x[5] if len(x) > 5 else ''
+                filed_at = x[8] if len(x) > 8 else ''
                 display_location = village_name if village_name else location_text
                 if not display_location:
                     display_location = 'Not specified'
@@ -911,7 +947,7 @@ def dashboard():
                 c = {
                     'id': x[0], 'name': x[1], 'phone': x[2], 'category': x[3],
                     'description': problem_text, 'location': display_location, 'priority': priority,
-                    'status': status, 'filed_at': x[8], 'maps_link': x[13] if len(x) > 13 else '',
+                    'status': status, 'filed_at': filed_at, 'maps_link': x[13] if len(x) > 13 else '',
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
            
@@ -932,6 +968,19 @@ def dashboard():
            
             if priority == 'high':
                 high_priority_complaints.append(c)
+        
+        # Apply sorting
+        reverse_sort = (sort_order == 'desc')
+        if sort_by == 'priority':
+            priority_order = {'high': 3, 'medium': 2, 'low': 1}
+            filtered_complaints.sort(key=lambda x: priority_order.get(x.get('priority', 'medium'), 2), reverse=reverse_sort)
+        elif sort_by == 'status':
+            status_order = {'pending': 1, 'in_review': 2, 'in_progress': 3, 'resolved': 4, 'rejected': 5}
+            filtered_complaints.sort(key=lambda x: status_order.get(x.get('status', 'pending'), 1), reverse=reverse_sort)
+        elif sort_by == 'filed_at':
+            filtered_complaints.sort(key=lambda x: x.get('filed_at', ''), reverse=reverse_sort)
+        else:
+            filtered_complaints.sort(key=lambda x: x.get('filed_at', ''), reverse=True)
        
         pending_certs = []
         processing_certs = []
@@ -1004,7 +1053,9 @@ def dashboard():
             now=datetime.now().strftime("%d %b %Y, %H:%M"),
             c=counts,
             filter_status=filter_status,
-            filter_priority=filter_priority)
+            filter_priority=filter_priority,
+            sort_by=sort_by,
+            sort_order=sort_order)
     except Exception as e:
         print(f"Dashboard error: {e}")
         return f"Dashboard error: {str(e)}", 500
@@ -1160,21 +1211,22 @@ def add_sarpanch():
    
     return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
 
-# ── HTML TEMPLATES ────────────────────────────────────────────
+# ── HTML TEMPLATES (Mobile Responsive) ────────────────────────
 LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head><title>Sarpanch Login</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=yes">
 <style>
 *{box-sizing:border-box}
-body{font-family:Arial;display:flex;justify-content:center;align-items:center;height:100vh;background:#f0f2f5;margin:0;padding:15px}
+body{font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0;padding:15px}
 .login-container{background:white;padding:30px;border-radius:10px;width:100%;max-width:350px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
 h2{color:#4a7c59;text-align:center;margin:0 0 10px 0}
 h3{text-align:center;margin:0 0 20px 0;color:#333}
 input{width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:5px;font-size:16px}
 button{width:100%;padding:12px;background:#4a7c59;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}
 .error{color:red;text-align:center}
+@media (max-width:480px){.login-container{padding:20px}}
 </style>
 </head>
 <body>
@@ -1196,19 +1248,19 @@ PROFILE_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head><title>My Profile</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>
 *{box-sizing:border-box}
 body{font-family:Arial;margin:0;background:#f0f2f5}
 .header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:360px;height:360px;object-fit:cover;margin:0 auto 15px auto;display:block;border:3px solid #4a7c59}
+.photo-preview{width:150px;height:150px;object-fit:cover;margin:0 auto 15px auto;display:block;border-radius:50%;border:3px solid #4a7c59}
 .field{margin-bottom:15px}
 .label{font-weight:bold;display:block;margin-bottom:5px}
 input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
-button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px}
+button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px;width:100%}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.photo-preview{width:200px;height:200px}}
+@media (max-width:600px){.container{margin:15px;padding:15px}}
 </style>
 </head>
 <body>
@@ -1222,7 +1274,7 @@ button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radiu
 {% if user and user.photo %}
 <img src="{{ user.photo }}" class="photo-preview" alt="Profile Photo">
 {% else %}
-<div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center">No Photo</div>
+<div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center;border-radius:50%">No Photo</div>
 {% endif %}
 <input type="file" name="photo" accept="image/*">
 </div>
@@ -1252,7 +1304,7 @@ SARPANCH_LIST_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head><title>Sarpanch Users</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>
 *{box-sizing:border-box}
 body{font-family:Arial;margin:0;background:#f0f2f5}
@@ -1264,7 +1316,7 @@ th{background:#f4f5f7}
 .photo{width:50px;height:50px;object-fit:cover;border-radius:50%}
 .btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
 .btn-back{background:#666}
-@media (max-width:768px){th,td{padding:8px;font-size:12px}}
+@media (max-width:768px){th,td{padding:8px;font-size:12px}.container{margin:10px;padding:10px}}
 </style>
 </head>
 <body>
@@ -1278,19 +1330,17 @@ th{background:#f4f5f7}
 <div class="container">
 <table>
 <thead>
-<tr>
-<th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th>
-</tr>
+<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
 </thead>
 <tbody>
 {% for s in sarpanchs %}
 <tr>
 <td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td style="text-align:center">{{ s.username }}</td>
-<td style="text-align:center">{{ s.village_name }}</td>
-<td style="text-align:center">{{ s.phone or '-' }}</td>
-<td style="text-align:center">{{ s.email or '-' }}</td>
-<td style="text-align:center">{{ s.created_at[:16] if s.created_at else '-' }}</td>
+<td>{{ s.username }}</td>
+<td>{{ s.village_name }}</td>
+<td>{{ s.phone or '-' }}</td>
+<td>{{ s.email or '-' }}</td>
+<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1303,7 +1353,7 @@ ADD_SARPANCH_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head><title>Add Sarpanch</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>
 *{box-sizing:border-box}
 body{font-family:Arial;margin:0;background:#f0f2f5}
@@ -1315,6 +1365,7 @@ input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px}
 button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px;cursor:pointer;width:100%}
 .error{color:red}
 .btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block;margin-bottom:20px}
+@media (max-width:600px){.container{margin:15px;padding:15px}}
 </style>
 </head>
 <body>
@@ -1335,7 +1386,7 @@ button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px
 """
 
 DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=yes">
 <title>{{ village }} Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -1344,7 +1395,7 @@ DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
 body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
 .tl{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}
-.avatar{width:360px;height:360px;object-fit:cover;border:3px solid rgba(255,255,255,.4)}
+.avatar{width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid rgba(255,255,255,.4)}
 .village-info{text-align:center}
 .village-info h1{font-size:18px}
 .village-info .ts{font-size:12px;opacity:.75}
@@ -1359,9 +1410,10 @@ body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
 .filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
 .filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0;font-size:12px}
 .filter-btn.active{background:var(--green);color:white}
+.sort-link{color:var(--blue);text-decoration:none;margin-left:5px}
 .sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
 .sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:600px}
+table{width:100%;border-collapse:collapse;min-width:700px}
 th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
 td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
 .sortable{cursor:pointer;user-select:none}
@@ -1380,18 +1432,20 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 .map-link{color:#1a73e8;text-decoration:none}
 .audio-player{width:100%;margin-top:5px}
 @media (max-width:768px){
-.avatar{width:200px;height:200px}
+.avatar{width:60px;height:60px}
 .stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
 .tb{flex-direction:column;gap:15px;text-align:center}
 .nav-links{justify-content:center}
 .tl{align-items:center}
+.sec{margin:10px}
+th,td{padding:8px;font-size:11px}
 }
 </style>
 </head>
 <body>
 <div class="tb">
 <div class="tl">
-{% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center">👤</div>{% endif %}
+{% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center;border-radius:50%">👤</div>{% endif %}
 <div class="village-info"><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
 </div>
 <div class="nav-links">
@@ -1401,40 +1455,44 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 </div>
 </div>
 <div class="stats">
-<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
-<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
+<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
+<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
+<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
+<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
+<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
 </div>
 <div class="filter-bar">
 <span style="font-size:12px;color:#666">Filter by Status:</span>
-<a href="?filter_status=ALL&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved&filter_priority={{ filter_priority }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
+<a href="?filter_status=ALL&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status=pending&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
+<a href="?filter_status=in_review&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
+<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
+<a href="?filter_status=resolved&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
 </div>
 <div class="filter-bar">
 <span style="font-size:12px;color:#666">Filter by Priority:</span>
-<a href="?filter_status={{ filter_status }}&filter_priority=ALL"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=low"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=medium"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=high"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=low&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=medium&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
+<a href="?filter_status={{ filter_status }}&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
 </div>
 <div class="sec">
-<div class="sh">📋 Complaints</div>
+<div class="sh">📋 Complaints 
+<a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=desc" class="sort-link">▼ Latest</a>
+<a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=asc" class="sort-link">▲ Oldest</a>
+</div>
 {% if filtered_complaints %}
 <table id="complaintTable">
 <thead>
 <tr>
-<th class="sortable" onclick="sortTable(0)">ID</th>
-<th class="sortable" onclick="sortTable(1)">Name</th>
-<th class="sortable" onclick="sortTable(2)">Category</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=id&sort_order={% if sort_by == 'id' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">ID</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=name&sort_order={% if sort_by == 'name' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Name</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=category&sort_order={% if sort_by == 'category' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Category</th>
 <th>Problem</th>
 <th>Location</th>
-<th class="sortable" onclick="sortTable(5)">Priority</th>
-<th class="sortable" onclick="sortTable(6)">Status</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=priority&sort_order={% if sort_by == 'priority' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Priority</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=status&sort_order={% if sort_by == 'status' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Status</th>
+<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order={% if sort_by == 'filed_at' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">📅 Reported On</th>
 <th>Actions</th>
 </tr>
 </thead>
@@ -1448,13 +1506,14 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
 <td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
 <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+<td><small>{{ x.filed_at }}</small></td>
 <td class="acts">
 {% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
 {% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</div></td>
+</td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1468,14 +1527,12 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in pending_certs %}
-<tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge pending">Pending</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
-</tr>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
+<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 {% for x in processing_certs %}
-<tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge processing">Processing</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td>
-</tr>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
+<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1484,29 +1541,16 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table class="data-table">
-<thead>
-<tr>
-<th>ID</th>
-<th>Title</th>
-<th>Status</th>
-<th>Updated</th>
-<th>Actions</th>
-</tr>
-</thead>
+<table>
+<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
 <tbody>
 {% for w in works %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px">{{ w.id }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ w.title }}</td>
-<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
-<td style="border:1px solid #ddd;padding:8px">{{ w.updated }}</td>
+<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
 <td class="acts">
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</div></td>
-</tr>
+</td></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1519,24 +1563,11 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table class="data-table">
-<thead>
-<tr>
-<th>Title</th>
-<th>Message</th>
-<th>Date</th>
-</tr>
-</thead>
-<tbody>
+<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
 {% for a in announcements %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px"><strong>{{ a.title }}</strong></td>
-<td style="border:1px solid #ddd;padding:8px">{{ a.body }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ a.date }}</td>
-</tr>
+<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
 {% endfor %}
-</tbody>
-</table>
+</tbody></table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
 <form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
 <input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
@@ -1547,64 +1578,22 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table class="data-table">
-<thead>
-<tr>
-<th>ID</th>
-<th>Name</th>
-<th>Category</th>
-<th>Status</th>
-<th>Action</th>
-</tr>
-</thead>
+<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr>
-<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
-<td style="border:1px solid #ddd;padding:8px">{{ x.category }}</td>
-<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td style="border:1px solid #ddd;padding:8px"><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
-</tr>
+<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
 {% endfor %}
-</tbody>
-</table>
+</tbody></table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
-<script>
-function sortTable(colIndex) {
-    var table = document.querySelector('#complaintTable');
-    if (!table) return;
-    var tbody = table.querySelector('tbody');
-    var rows = Array.from(tbody.querySelectorAll('tr'));
-    var ascending = table.getAttribute('data-sort-asc') === colIndex.toString() ? false : true;
-    rows.sort(function(a, b) {
-        var aVal = a.cells[colIndex].innerText.trim();
-        var bVal = b.cells[colIndex].innerText.trim();
-        if (colIndex === 5) {
-            var pOrder = {LOW: 1, MEDIUM: 2, HIGH: 3};
-            aVal = pOrder[aVal] || 0;
-            bVal = pOrder[bVal] || 0;
-        } else if (colIndex === 6) {
-            var sOrder = {PENDING: 1, 'IN REVIEW': 2, 'IN PROGRESS': 3, RESOLVED: 4, REJECTED: 5};
-            aVal = sOrder[aVal] || 0;
-            bVal = sOrder[bVal] || 0;
-        }
-        if (aVal < bVal) return ascending ? -1 : 1;
-        if (aVal > bVal) return ascending ? 1 : -1;
-        return 0;
-    });
-    rows.forEach(function(row) { tbody.appendChild(row); });
-    table.setAttribute('data-sort-asc', ascending ? colIndex : '');
-}
-</script>
 </body></html>
 """
 
 COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
 <html>
 <head><title>Complaint Details</title>
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
 <style>
 *{box-sizing:border-box}
 body{font-family:Arial;margin:0;background:#f5f5f5}
@@ -1618,7 +1607,7 @@ button{background:#1a73e8;color:white;border:none;padding:10px 20px;border-radiu
 hr{margin:20px 0}
 .map-link{color:#1a73e8;text-decoration:none}
 .audio-player{width:100%;margin-top:5px}
-@media (max-width:600px){.label{width:100%;display:block;margin-bottom:5px}}
+@media (max-width:600px){.label{width:100%;display:block;margin-bottom:5px}.container{margin:15px;padding:15px}}
 </style>
 </head>
 <body>
