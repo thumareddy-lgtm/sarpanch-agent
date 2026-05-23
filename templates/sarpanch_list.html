@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sarpanch Users</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="app-container">
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <h2>Sarpanch Registry</h2>
+      </div>
+      <div class="nav-menu">
+        <a href="/add_sarpanch" class="nav-link">+ Add New Sarpanch</a>
+        <a href="/dashboard" class="nav-link">← Back</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-wrapper">
+    <div class="table-sec glass-card">
+      <div class="table-header">
+        <h3>👥 Administrative Accounts</h3>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 80px; text-align: center;">Photo</th>
+            <th>Username</th>
+            <th>Village</th>
+            <th>Phone</th>
+            <th>Email</th>
+            <th>Date Joined</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in sarpanchs %}
+            <tr>
+              <td style="text-align: center;">
+                {% if s.photo %}
+                  <img src="{{ s.photo }}" class="header-avatar" style="width: 42px; height: 42px;" alt="Sarpanch Photo">
+                {% else %}
+                  <div class="header-avatar" style="width: 42px; height: 42px; background: hsl(210, 14%, 90%); display: inline-flex; align-items: center; justify-content: center;">👤</div>
+                {% endif %}
+              </td>
+              <td style="font-weight: 600;">{{ s.username }}</td>
+              <td>{{ s.village_name }}</td>
+              <td>{{ s.phone or '-' }}</td>
+              <td><small>{{ s.email or '-' }}</small></td>
+              <td><small>{{ s.created_at[:16] if s.created_at else '-' }}</small></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</body>
+</html>

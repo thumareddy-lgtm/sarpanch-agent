@@ -1,6 +1,6 @@
 import os, uuid, sqlite3, requests, re, hashlib, json
 from datetime import datetime
-from flask import Flask, request, render_template_string, redirect, session, url_for
+from flask import Flask, request, render_template, redirect, session, url_for
 from werkzeug.utils import secure_filename
 
 # ── Config ───────────────────────────────────────────────────
@@ -26,7 +26,41 @@ app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024
 
-whatsapp_sessions = {}
+def get_whatsapp_session(sender):
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        cur.execute(f"SELECT session_data FROM whatsapp_sessions WHERE phone = {p}", (sender,))
+        row = cur.fetchone()
+        conn.close()
+        if row:
+            val = row[0] if not isinstance(row, dict) else row.get('session_data')
+            return json.loads(val)
+    except Exception as e:
+        print(f"Error fetching session: {e}")
+    return {"state": "idle", "lang": "en"}
+
+def save_whatsapp_session(sender, session_data):
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        if db_type == "pg":
+            cur.execute("""
+                INSERT INTO whatsapp_sessions (phone, session_data) VALUES (%s, %s)
+                ON CONFLICT (phone) DO UPDATE SET session_data = EXCLUDED.session_data
+            """, (sender, json.dumps(session_data)))
+        else:
+            cur.execute("""
+                INSERT INTO whatsapp_sessions (phone, session_data) VALUES (?, ?)
+                ON CONFLICT(phone) DO UPDATE SET session_data = excluded.session_data
+            """, (sender, json.dumps(session_data)))
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Error saving session: {e}")
+
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -127,6 +161,14 @@ def init_db():
             village_name TEXT, phone TEXT, email TEXT, photo TEXT, created_at TEXT
         )
     """)
+   
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+            phone TEXT PRIMARY KEY,
+            session_data TEXT
+        )
+    """)
+
    
     default_password = hashlib.sha256("sarpanch123".encode()).hexdigest()
     cur.execute(f"SELECT * FROM sarpanch_users WHERE username = 'kolukonda_sarpanch'")
@@ -711,6 +753,9 @@ def whatsapp_webhook():
             return request.args.get("hub.challenge", "")
         return "Invalid token", 403
    
+    is_simulator = request.headers.get("X-Simulator") == "true"
+    reply = None
+    
     try:
         data = request.json
         print(f"📨 Webhook received")
@@ -727,10 +772,7 @@ def whatsapp_webhook():
         sender = msg.get("from", "")
         msg_type = msg.get("type", "")
        
-        if sender not in whatsapp_sessions:
-            whatsapp_sessions[sender] = {"state": "idle", "lang": "en"}
-       
-        session_data = whatsapp_sessions[sender]
+        session_data = get_whatsapp_session(sender)
        
         if msg_type == "text":
             user_msg = msg["text"]["body"].strip()
@@ -778,30 +820,43 @@ def whatsapp_webhook():
                 if reply is not None:
                     send_whatsapp_message(sender, reply)
             else:
-                if session_data.get("lang", "en") == "te":
-                    send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
+                lang = session_data.get("lang", "en")
+                if lang == "te":
+                    reply = "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి."
                 else:
-                    send_whatsapp_message(sender, "Please send text, location, or voice message.")
+                    reply = "Please send text, location, or voice message."
+                send_whatsapp_message(sender, reply)
        
         else:
-            if session_data.get("lang", "en") == "te":
-                send_whatsapp_message(sender, "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి.")
+            lang = session_data.get("lang", "en")
+            if lang == "te":
+                reply = "దయచేసి టెక్స్ట్, లొకేషన్ లేదా వాయిస్ మెసేజ్ పంపండి."
             else:
-                send_whatsapp_message(sender, "Please send text, location, or voice message.")
+                reply = "Please send text, location, or voice message."
+            send_whatsapp_message(sender, reply)
        
-        whatsapp_sessions[sender] = session_data
+        save_whatsapp_session(sender, session_data)
        
     except Exception as e:
         print(f"❌ Webhook error: {e}")
+        if is_simulator:
+            return {"status": "error", "message": str(e)}, 500
    
+    if is_simulator:
+        return {"status": "success", "reply": reply}, 200
     return "OK", 200
 
 # ── ROUTES ────────────────────────────────────────────────────
+@app.route("/chat")
+def chat_simulator():
+    return render_template("chat.html", village=VILLAGE_NAME, sarpanch=SARPANCH_NAME)
+
 @app.route("/")
 def home():
     if 'sarpanch_username' in session:
         return redirect(url_for('dashboard'))
     return redirect(url_for('login'))
+
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -836,7 +891,7 @@ def login():
             print(f"Login error: {e}")
             error = f"Login error: {str(e)}"
    
-    return render_template_string(LOGIN_TEMPLATE, error=error)
+    return render_template('login.html', error=error)
 
 @app.route("/logout")
 def logout():
@@ -879,7 +934,7 @@ def profile():
        
         return redirect(url_for('profile'))
    
-    return render_template_string(PROFILE_TEMPLATE, user=user)
+    return render_template('profile.html', user=user)
 
 @app.route("/dashboard")
 def dashboard():
@@ -1039,7 +1094,7 @@ def dashboard():
             'high': len(high_priority_complaints)
         }
        
-        return render_template_string(DASH_HTML,
+        return render_template('dashboard.html',
             filtered_complaints=filtered_complaints,
             resolved_complaints=resolved_complaints,
             pending_certs=pending_certs,
@@ -1090,7 +1145,7 @@ def view_complaint(cid):
                 'media_url': row[16] if len(row) > 16 else ''
             }
        
-        return render_template_string(COMPLAINT_DETAIL_HTML, complaint=complaint_dict)
+        return render_template('complaint_detail.html', complaint=complaint_dict)
     except Exception as e:
         print(f"Error viewing complaint: {e}")
         return f"Error: {e}", 500
@@ -1178,7 +1233,7 @@ def list_sarpanchs():
     if 'sarpanch_username' not in session:
         return redirect(url_for('login'))
     sarpanchs = get_all_sarpanchs()
-    return render_template_string(SARPANCH_LIST_TEMPLATE, sarpanchs=sarpanchs)
+    return render_template('sarpanch_list.html', sarpanchs=sarpanchs)
 
 @app.route("/add_sarpanch", methods=["GET", "POST"])
 def add_sarpanch():
@@ -1209,455 +1264,8 @@ def add_sarpanch():
             finally:
                 conn.close()
    
-    return render_template_string(ADD_SARPANCH_TEMPLATE, error=error)
+    return render_template('add_sarpanch.html', error=error)
 
-# ── HTML TEMPLATES (Mobile Responsive) ────────────────────────
-LOGIN_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head><title>Sarpanch Login</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=yes">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;display:flex;justify-content:center;align-items:center;min-height:100vh;background:#f0f2f5;margin:0;padding:15px}
-.login-container{background:white;padding:30px;border-radius:10px;width:100%;max-width:350px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
-h2{color:#4a7c59;text-align:center;margin:0 0 10px 0}
-h3{text-align:center;margin:0 0 20px 0;color:#333}
-input{width:100%;padding:12px;margin:10px 0;border:1px solid #ddd;border-radius:5px;font-size:16px}
-button{width:100%;padding:12px;background:#4a7c59;color:white;border:none;border-radius:5px;cursor:pointer;font-size:16px}
-.error{color:red;text-align:center}
-@media (max-width:480px){.login-container{padding:20px}}
-</style>
-</head>
-<body>
-<div class="login-container">
-<h2>🏘️ Gram Panchayat</h2>
-<h3>Sarpanch Login</h3>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="POST">
-<input type="text" name="username" placeholder="Username" required>
-<input type="password" name="password" placeholder="Password" required>
-<button type="submit">Login</button>
-</form>
-<p style="text-align:center;font-size:12px;margin-top:15px">Contact administrator for credentials</p>
-</div>
-</body></html>
-"""
-
-PROFILE_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head><title>My Profile</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.container{max-width:600px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.photo-preview{width:150px;height:150px;object-fit:cover;margin:0 auto 15px auto;display:block;border-radius:50%;border:3px solid #4a7c59}
-.field{margin-bottom:15px}
-.label{font-weight:bold;display:block;margin-bottom:5px}
-input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px;font-size:14px}
-button{background:#4a7c59;color:white;border:none;padding:12px 20px;border-radius:5px;cursor:pointer;font-size:16px;width:100%}
-.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block}
-@media (max-width:600px){.container{margin:15px;padding:15px}}
-</style>
-</head>
-<body>
-<div class="header">
-<h2>My Profile</h2>
-<a href="/dashboard" class="btn-back">← Dashboard</a>
-</div>
-<div class="container">
-<form method="POST" enctype="multipart/form-data">
-<div style="text-align:center">
-{% if user and user.photo %}
-<img src="{{ user.photo }}" class="photo-preview" alt="Profile Photo">
-{% else %}
-<div class="photo-preview" style="background:#ddd;display:flex;align-items:center;justify-content:center;border-radius:50%">No Photo</div>
-{% endif %}
-<input type="file" name="photo" accept="image/*">
-</div>
-<div class="field">
-<label class="label">Username</label>
-<input type="text" value="{{ user.username if user else '' }}" disabled>
-</div>
-<div class="field">
-<label class="label">Village Name</label>
-<input type="text" value="{{ user.village_name if user else '' }}" disabled>
-</div>
-<div class="field">
-<label class="label">Phone Number</label>
-<input type="tel" name="phone" value="{{ user.phone if user else '' }}">
-</div>
-<div class="field">
-<label class="label">Email</label>
-<input type="email" name="email" value="{{ user.email if user else '' }}">
-</div>
-<button type="submit">Update Profile</button>
-</form>
-</div>
-</body></html>
-"""
-
-SARPANCH_LIST_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head><title>Sarpanch Users</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.container{max-width:100%;margin:20px;background:white;padding:20px;border-radius:10px;overflow-x:auto}
-table{width:100%;border-collapse:collapse;min-width:600px}
-th,td{padding:12px;text-align:left;border-bottom:1px solid #ddd}
-th{background:#f4f5f7}
-.photo{width:50px;height:50px;object-fit:cover;border-radius:50%}
-.btn{background:#4a7c59;color:white;padding:8px 15px;text-decoration:none;border-radius:5px;display:inline-block}
-.btn-back{background:#666}
-@media (max-width:768px){th,td{padding:8px;font-size:12px}.container{margin:10px;padding:10px}}
-</style>
-</head>
-<body>
-<div class="header">
-<h2>Sarpanch Users</h2>
-<div>
-<a href="/add_sarpanch" class="btn">+ Add</a>
-<a href="/dashboard" class="btn btn-back">← Back</a>
-</div>
-</div>
-<div class="container">
-<table>
-<thead>
-<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
-</thead>
-<tbody>
-{% for s in sarpanchs %}
-<tr>
-<td style="text-align:center">{% if s.photo %}<img src="{{ s.photo }}" class="photo">{% else %}📷{% endif %}</td>
-<td>{{ s.username }}</td>
-<td>{{ s.village_name }}</td>
-<td>{{ s.phone or '-' }}</td>
-<td>{{ s.email or '-' }}</td>
-<td>{{ s.created_at[:16] if s.created_at else '-' }}</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-</div>
-</body></html>
-"""
-
-ADD_SARPANCH_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head><title>Add Sarpanch</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f0f2f5}
-.header{background:#4a7c59;color:white;padding:15px 20px}
-.container{max-width:500px;margin:30px auto;background:white;padding:25px;border-radius:10px}
-.field{margin-bottom:15px}
-.label{font-weight:bold;display:block;margin-bottom:5px}
-input{width:100%;padding:10px;border:1px solid #ddd;border-radius:5px}
-button{background:#4a7c59;color:white;border:none;padding:12px;border-radius:5px;cursor:pointer;width:100%}
-.error{color:red}
-.btn-back{background:#666;text-decoration:none;color:white;padding:8px 15px;border-radius:5px;display:inline-block;margin-bottom:20px}
-@media (max-width:600px){.container{margin:15px;padding:15px}}
-</style>
-</head>
-<body>
-<div class="header"><h2>Add New Sarpanch</h2></div>
-<div class="container">
-<a href="/sarpanchs" class="btn-back">← Back</a>
-{% if error %}<p class="error">{{ error }}</p>{% endif %}
-<form method="POST">
-<div class="field"><label class="label">Username *</label><input type="text" name="username" required></div>
-<div class="field"><label class="label">Password *</label><input type="password" name="password" required></div>
-<div class="field"><label class="label">Village Name *</label><input type="text" name="village_name" required></div>
-<div class="field"><label class="label">Phone Number</label><input type="tel" name="phone"></div>
-<div class="field"><label class="label">Email</label><input type="email" name="email"></div>
-<button type="submit">Add Sarpanch</button>
-</form>
-</div>
-</body></html>
-"""
-
-DASH_HTML = r"""<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=yes">
-<title>{{ village }} Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--green:#4a7c59;--red:#c0392b;--blue:#0070f3;--amber:#e07b00;--border:#dfe1e6;--text:#172b4d;--sub:#6b778c}
-body{font-family:'DM Sans',sans-serif;background:#f0f2f5;color:var(--text)}
-.tb{background:var(--green);color:#fff;padding:15px 20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap}
-.tl{display:flex;flex-direction:column;align-items:center;gap:10px;flex:1}
-.avatar{width:80px;height:80px;object-fit:cover;border-radius:50%;border:3px solid rgba(255,255,255,.4)}
-.village-info{text-align:center}
-.village-info h1{font-size:18px}
-.village-info .ts{font-size:12px;opacity:.75}
-.nav-links{display:flex;gap:15px;flex-wrap:wrap}
-.nav-links a{color:white;text-decoration:none;padding:5px 10px;background:rgba(255,255,255,0.15);border-radius:5px}
-.stats{display:flex;gap:12px;padding:18px 20px;flex-wrap:wrap}
-.sc{background:#fff;border-radius:10px;padding:14px 20px;flex:1;min-width:100px;text-align:center;cursor:pointer;transition:transform 0.2s,box-shadow 0.2s;box-shadow:0 1px 4px rgba(0,0,0,.06)}
-.sc:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
-.sc .val{font-size:24px;font-weight:700}
-.sc .lbl{font-size:11px;color:var(--sub);margin-top:2px}
-.sc.c1 .val{color:var(--amber)}.sc.c2 .val{color:var(--blue)}.sc.c3 .val{color:var(--green)}.sc.c4 .val{color:#7b2d8b}.sc.c5 .val{color:var(--red)}
-.filter-bar{display:flex;gap:10px;padding:0 20px 15px 20px;flex-wrap:wrap}
-.filter-btn{padding:6px 12px;border-radius:20px;border:none;cursor:pointer;background:#e0e0e0;font-size:12px}
-.filter-btn.active{background:var(--green);color:white}
-.sort-link{color:var(--blue);text-decoration:none;margin-left:5px}
-.sec{margin:18px 20px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);overflow-x:auto}
-.sh{padding:12px 18px;border-bottom:1px solid var(--border);font-weight:600;font-size:14px;background:#f4f5f7}
-table{width:100%;border-collapse:collapse;min-width:700px}
-th{padding:10px 12px;font-size:11px;color:var(--sub);text-align:left;background:#f4f5f7;border-bottom:1px solid var(--border)}
-td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertical-align:middle}
-.sortable{cursor:pointer;user-select:none}
-.sortable:hover{background:#e8e8e8}
-.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
-.badge.pending{background:#fff4e0;color:var(--amber)}
-.badge.in_review{background:#dbeafe;color:var(--blue)}
-.badge.in_progress{background:#e0e7ff;color:#4338ca}
-.badge.resolved{background:#dcfce7;color:var(--green)}
-.badge.rejected{background:#fee2e2;color:var(--red)}
-.acts{display:flex;gap:5px;flex-wrap:wrap}
-.btn{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:600;text-decoration:none;display:inline-block}
-.bb{background:var(--blue);color:#fff}.bg{background:var(--green);color:#fff}
-.br{background:var(--red);color:#fff}.ba{background:var(--amber);color:#fff}
-.empty{text-align:center;padding:28px;color:var(--sub);font-size:13px}
-.map-link{color:#1a73e8;text-decoration:none}
-.audio-player{width:100%;margin-top:5px}
-@media (max-width:768px){
-.avatar{width:60px;height:60px}
-.stats{gap:8px}.sc{padding:10px 12px;min-width:70px}.sc .val{font-size:18px}
-.tb{flex-direction:column;gap:15px;text-align:center}
-.nav-links{justify-content:center}
-.tl{align-items:center}
-.sec{margin:10px}
-th,td{padding:8px;font-size:11px}
-}
-</style>
-</head>
-<body>
-<div class="tb">
-<div class="tl">
-{% if photo %}<img src="{{ photo }}" class="avatar">{% else %}<div class="avatar" style="background:#ccc;display:flex;align-items:center;justify-content:center;border-radius:50%">👤</div>{% endif %}
-<div class="village-info"><h1>{{ village }}</h1><div class="ts">{{ username }} · {{ mandal }}</div></div>
-</div>
-<div class="nav-links">
-<a href="/profile">Profile</a>
-<a href="/sarpanchs">Sarpanchs</a>
-<a href="/logout">Logout</a>
-</div>
-</div>
-<div class="stats">
-<div class="sc c1" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.total_pending }}</div><div class="lbl">Pending Complaints</div></div>
-<div class="sc c2" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.cert_pending }}</div><div class="lbl">Cert Requests</div></div>
-<div class="sc c3" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.resolved }}</div><div class="lbl">Resolved</div></div>
-<div class="sc c4" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.works }}</div><div class="lbl">Active Works</div></div>
-<div class="sc c5" onclick="window.location.href='?filter_status=ALL&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}'"><div class="val">{{ c.high }}</div><div class="lbl">High Priority</div></div>
-</div>
-<div class="filter-bar">
-<span style="font-size:12px;color:#666">Filter by Status:</span>
-<a href="?filter_status=ALL&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status=pending&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
-<a href="?filter_status=in_review&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
-<a href="?filter_status=in_progress&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
-<a href="?filter_status=resolved&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
-</div>
-<div class="filter-bar">
-<span style="font-size:12px;color:#666">Filter by Priority:</span>
-<a href="?filter_status={{ filter_status }}&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=low&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=medium&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
-<a href="?filter_status={{ filter_status }}&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
-</div>
-<div class="sec">
-<div class="sh">📋 Complaints 
-<a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=desc" class="sort-link">▼ Latest</a>
-<a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=asc" class="sort-link">▲ Oldest</a>
-</div>
-{% if filtered_complaints %}
-<table id="complaintTable">
-<thead>
-<tr>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=id&sort_order={% if sort_by == 'id' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">ID</th>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=name&sort_order={% if sort_by == 'name' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Name</th>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=category&sort_order={% if sort_by == 'category' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Category</th>
-<th>Problem</th>
-<th>Location</th>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=priority&sort_order={% if sort_by == 'priority' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Priority</th>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=status&sort_order={% if sort_by == 'status' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Status</th>
-<th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order={% if sort_by == 'filed_at' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">📅 Reported On</th>
-<th>Actions</th>
-</tr>
-</thead>
-<tbody>
-{% for x in filtered_complaints %}
-<tr>
-<td><strong>{{ x.id }}</strong></td>
-<td>{{ x.name }}<br><small>{{ x.phone }}</small></td>
-<td>{{ x.category }}</td>
-<td><small>{{ x.description[:50] }}{% if x.description|length > 50 %}...{% endif %}</small></td>
-<td>{% if x.maps_link %}<a href="{{ x.maps_link }}" target="_blank" class="map-link">📍 {{ x.location }}</a>{% else %}{{ x.location }}{% endif %}</td>
-<td class="p{{ x.priority[0] }}">{{ x.priority|upper }}</td>
-<td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
-<td><small>{{ x.filed_at }}</small></td>
-<td class="acts">
-{% if x.status=='pending' %}<a href="/caction/{{ x.id }}/in_review" class="btn bb">Review</a>{% endif %}
-{% if x.status=='in_review' %}<a href="/caction/{{ x.id }}/in_progress" class="btn ba">Start</a>{% endif %}
-{% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
-<a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
-<a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</td>
-</tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}<div class="empty">No complaints found.</div>{% endif %}
-</div>
-<div class="sec">
-<div class="sh">📋 Certificate Requests</div>
-{% if pending_certs or processing_certs %}
-<table>
-<thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
-<tbody>
-{% for x in pending_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
-{% endfor %}
-{% for x in processing_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}<div class="empty">No pending certificate requests.</div>{% endif %}
-</div>
-<div class="sec">
-<div class="sh">🛠️ Development Works</div>
-{% if works %}
-<table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
-<tbody>
-{% for w in works %}
-<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
-<td class="acts">
-{% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
-{% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
-<a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
-{% endfor %}
-</tbody>
-</table>
-{% else %}<div class="empty">No works added.</div>{% endif %}
-<form method="post" action="/addwork" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
-<input type="text" name="title" placeholder="Add new work" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">+ Add Work</button>
-</form>
-</div>
-<div class="sec">
-<div class="sh">📢 Announcements</div>
-{% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
-{% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
-{% endfor %}
-</tbody></table>
-{% else %}<div class="empty">No announcements.</div>{% endif %}
-<form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
-<input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<input type="text" name="body" placeholder="Message..." required style="flex:2;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
-<button type="submit" style="background:var(--green);color:#fff;border:none;border-radius:6px;padding:8px 16px">Post</button>
-</form>
-</div>
-<div class="sec">
-<div class="sh">✅ Resolved / Closed Items</div>
-{% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
-<tbody>
-{% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
-{% endfor %}
-</tbody></table>
-{% else %}<div class="empty">No resolved items.</div>{% endif %}
-</div>
-</body></html>
-"""
-
-COMPLAINT_DETAIL_HTML = r"""<!DOCTYPE html>
-<html>
-<head><title>Complaint Details</title>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<style>
-*{box-sizing:border-box}
-body{font-family:Arial;margin:0;background:#f5f5f5}
-.header{background:#4a7c59;color:white;padding:15px 20px}
-.container{max-width:800px;margin:30px auto;background:white;padding:25px;border-radius:10px;box-shadow:0 2px 10px rgba(0,0,0,0.1)}
-.field{margin-bottom:15px}
-.label{font-weight:bold;width:150px;display:inline-block}
-button{background:#1a73e8;color:white;border:none;padding:10px 20px;border-radius:5px;cursor:pointer}
-.reply-box{width:100%;padding:10px;margin:10px 0;border:1px solid #ddd;border-radius:5px}
-.back-btn{background:#666;color:white;padding:8px 15px;text-decoration:none;display:inline-block;margin-bottom:20px;border-radius:5px}
-hr{margin:20px 0}
-.map-link{color:#1a73e8;text-decoration:none}
-.audio-player{width:100%;margin-top:5px}
-@media (max-width:600px){.label{width:100%;display:block;margin-bottom:5px}.container{margin:15px;padding:15px}}
-</style>
-</head>
-<body>
-<div class="header"><h2>Complaint Details</h2></div>
-<div class="container">
-<a href="/dashboard" class="back-btn">← Back to Dashboard</a>
-<div class="field"><span class="label">Ticket ID:</span> {{ complaint.get('id', 'N/A') }}</div>
-<div class="field"><span class="label">Citizen Name:</span> {{ complaint.get('name', 'Unknown') }}</div>
-<div class="field"><span class="label">Phone:</span> {{ complaint.get('phone', 'N/A') }}</div>
-<div class="field"><span class="label">Category:</span> {{ complaint.get('category', 'General') }}</div>
-<div class="field"><span class="label">Problem/Complaint:</span><br><div style="background:#f8f9fa;padding:15px;border-radius:5px;margin-top:5px">{{ complaint.get('description', 'No description') }}</div></div>
-<div class="field"><span class="label">Location/Village:</span> {{ complaint.get('location', 'Not provided') }}</div>
-<div class="field"><span class="label">Priority:</span> {{ complaint.get('priority', 'medium')|upper }}</div>
-<div class="field"><span class="label">Status:</span> {{ complaint.get('status', 'pending').replace('_',' ').title() }}</div>
-<div class="field"><span class="label">Filed:</span> {{ complaint.get('filed_at', 'Unknown') }}</div>
-{% if complaint.get('maps_link') %}
-<div class="field"><span class="label">🗺️ Map Location:</span> <a href="{{ complaint.get('maps_link') }}" target="_blank" class="map-link">Click to view on Google Maps</a><br><small>Coordinates: {{ complaint.get('location_lat', 'N/A') }}, {{ complaint.get('location_lng', 'N/A') }}</small></div>
-{% endif %}
-{% if complaint.get('media_type') == 'voice' and complaint.get('media_url') %}
-<div class="field"><span class="label">🎤 Voice Message:</span><br>
-<audio controls class="audio-player">
-<source src="{{ complaint.get('media_url') }}" type="audio/ogg">
-Your browser does not support the audio element.
-</audio>
-</div>
-{% endif %}
-<hr>
-<h3>Update Status</h3>
-<form method="POST" action="/update_status">
-<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<select name="status">
-<option value="pending" {% if complaint.get('status')=='pending' %}selected{% endif %}>Pending</option>
-<option value="in_review" {% if complaint.get('status')=='in_review' %}selected{% endif %}>In Review</option>
-<option value="in_progress" {% if complaint.get('status')=='in_progress' %}selected{% endif %}>In Progress</option>
-<option value="resolved" {% if complaint.get('status')=='resolved' %}selected{% endif %}>Resolved</option>
-<option value="rejected" {% if complaint.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
-</select>
-<textarea name="notes" placeholder="Add internal notes..." rows="2" style="width:100%;margin:10px 0"></textarea>
-<button type="submit">Update Status</button>
-</form>
-<hr>
-<h3>Send Reply to Citizen</h3>
-<form method="POST" action="/send_reply">
-<input type="hidden" name="ticket_id" value="{{ complaint.get('id') }}">
-<textarea name="reply_message" class="reply-box" rows="4" placeholder="Type your reply... Citizen will receive this on WhatsApp"></textarea>
-<button type="submit">Send Reply</button>
-</form>
-</div>
-</body></html>
-"""
 
 # ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":

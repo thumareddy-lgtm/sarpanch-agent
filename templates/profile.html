@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sarpanch Profile</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="app-container">
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <h2>My Profile</h2>
+      </div>
+      <div class="nav-menu">
+        <a href="/dashboard" class="nav-link">← Dashboard</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-wrapper">
+    <div class="profile-card glass-card">
+      <form method="POST" enctype="multipart/form-data">
+        <div class="profile-avatar-sec">
+          {% if user and user.photo %}
+            <img src="{{ user.photo }}" class="profile-preview" alt="Profile Photo">
+          {% else %}
+            <div class="profile-preview" style="background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center; margin: 0 auto 1rem auto;">
+              <span style="font-size: 2rem;">👤</span>
+            </div>
+          {% endif %}
+          <div class="form-group" style="max-width: 250px; margin: 0 auto 1.5rem auto;">
+            <input type="file" name="photo" accept="image/*" class="btn-neutral" style="font-size: 0.8rem; padding: 0.4rem;">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input type="text" value="{{ user.username if user else '' }}" disabled style="background: hsl(210, 14%, 95%); cursor: not-allowed;">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Village Name</label>
+          <input type="text" value="{{ user.village_name if user else '' }}" disabled style="background: hsl(210, 14%, 95%); cursor: not-allowed;">
+        </div>
+
+        <div class="form-group">
+          <label for="phone" class="form-label">Phone Number</label>
+          <input type="tel" id="phone" name="phone" value="{{ user.phone if user else '' }}" placeholder="Enter phone number">
+        </div>
+
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address</label>
+          <input type="email" id="email" name="email" value="{{ user.email if user else '' }}" placeholder="Enter email address">
+        </div>
+
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; margin-top: 1rem;">Update Profile</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

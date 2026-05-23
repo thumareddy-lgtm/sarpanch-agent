@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Add Sarpanch</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="app-container">
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        <h2>Add Administrative Account</h2>
+      </div>
+      <div class="nav-menu">
+        <a href="/sarpanchs" class="nav-link">← Registry</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-wrapper">
+    <div class="profile-card glass-card">
+      <h3 style="margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">🆕 Add New Sarpanch</h3>
+      
+      {% if error %}
+      <div class="auth-error">
+        {{ error }}
+      </div>
+      {% endif %}
+      
+      <form method="POST">
+        <div class="form-group">
+          <label for="username" class="form-label">Username *</label>
+          <input type="text" id="username" name="username" placeholder="Enter administrative username" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="password" class="form-label">Password *</label>
+          <input type="password" id="password" name="password" placeholder="Set password" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="village_name" class="form-label">Village Name *</label>
+          <input type="text" id="village_name" name="village_name" placeholder="Enter Gram Panchayat village name" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="phone" class="form-label">Phone Number</label>
+          <input type="tel" id="phone" name="phone" placeholder="Enter contact number">
+        </div>
+        
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address</label>
+          <input type="email" id="email" name="email" placeholder="Enter email address">
+        </div>
+        
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem; font-size: 0.95rem; margin-top: 1rem;">Add Sarpanch</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

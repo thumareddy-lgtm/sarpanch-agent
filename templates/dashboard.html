@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title>{{ village }} Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="app-container">
+  <!-- Top Navigation Bar -->
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-brand">
+        {% if photo %}
+          <img src="{{ photo }}" class="header-avatar" alt="Sarpanch Avatar">
+        {% else %}
+          <div class="header-avatar" style="background: hsl(210, 14%, 90%); display: flex; align-items: center; justify-content: center;">
+            <span style="font-size: 1.5rem;">👤</span>
+          </div>
+        {% endif %}
+        <div class="header-title">
+          <h1>{{ village }}</h1>
+          <div class="sub">🏛️ {{ username }} · {{ mandal }} Gram Panchayat</div>
+        </div>
+      </div>
+      <div class="nav-menu">
+        <a href="/profile" class="nav-link">Profile</a>
+        <a href="/sarpanchs" class="nav-link">Sarpanchs</a>
+        <a href="/logout" class="nav-link" style="background: var(--danger);">Logout</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="content-wrapper">
+    <!-- Quick Analytics Stats -->
+    <div class="stats-grid">
+      <div class="stat-card glass-card c-pending" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+        <div class="val">{{ c.total_pending }}</div>
+        <div class="lbl">Pending Complaints</div>
+      </div>
+      <div class="stat-card glass-card c-certs" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+        <div class="val">{{ c.cert_pending }}</div>
+        <div class="lbl">Cert Requests</div>
+      </div>
+      <div class="stat-card glass-card c-resolved" onclick="window.location.href='?filter_status=resolved&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+        <div class="val">{{ c.resolved }}</div>
+        <div class="lbl">Resolved</div>
+      </div>
+      <div class="stat-card glass-card c-works" onclick="window.location.href='?filter_status=ALL&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+        <div class="val">{{ c.works }}</div>
+        <div class="lbl">Active Works</div>
+      </div>
+      <div class="stat-card glass-card c-high" onclick="window.location.href='?filter_status=ALL&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}'">
+        <div class="val">{{ c.high }}</div>
+        <div class="lbl">High Priority</div>
+      </div>
+    </div>
+
+    <!-- Filters Panel -->
+    <div class="glass-card" style="padding: 1.25rem 1.5rem; display: flex; flex-direction: column; gap: 1rem; box-shadow: var(--shadow-sm);">
+      <div class="control-bar">
+        <div class="filter-group">
+          <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Status:</span>
+          <a href="?filter_status=ALL&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'ALL' %}active{% endif %}">All</button></a>
+          <a href="?filter_status=pending&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'pending' %}active{% endif %}">Pending</button></a>
+          <a href="?filter_status=in_review&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_review' %}active{% endif %}">In Review</button></a>
+          <a href="?filter_status=in_progress&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'in_progress' %}active{% endif %}">In Progress</button></a>
+          <a href="?filter_status=resolved&filter_priority={{ filter_priority }}&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_status == 'resolved' %}active{% endif %}">Resolved</button></a>
+        </div>
+      </div>
+      
+      <div class="control-bar" style="border-top: 1px solid var(--border-light); padding-top: 0.75rem;">
+        <div class="filter-group">
+          <span style="font-size: 0.85rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Priority:</span>
+          <a href="?filter_status={{ filter_status }}&filter_priority=ALL&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'ALL' %}active{% endif %}">All</button></a>
+          <a href="?filter_status={{ filter_status }}&filter_priority=low&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'low' %}active{% endif %}">Low</button></a>
+          <a href="?filter_status={{ filter_status }}&filter_priority=medium&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'medium' %}active{% endif %}">Medium</button></a>
+          <a href="?filter_status={{ filter_status }}&filter_priority=high&sort_by={{ sort_by }}&sort_order={{ sort_order }}"><button class="filter-btn {% if filter_priority == 'high' %}active{% endif %}">High</button></a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Complaints Section -->
+    <div class="table-sec glass-card">
+      <div class="table-header">
+        <h3>📋 Citizen Complaints</h3>
+        <div class="sort-controls">
+          <span>Sort: </span>
+          <a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=desc" class="sort-link {% if sort_by == 'filed_at' and sort_order == 'desc' %}active{% endif %}">▼ Latest</a>
+          <a href="?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order=asc" class="sort-link {% if sort_by == 'filed_at' and sort_order == 'asc' %}active{% endif %}">▲ Oldest</a>
+        </div>
+      </div>
+      
+      {% if filtered_complaints %}
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=id&sort_order={% if sort_by == 'id' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">ID</th>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=name&sort_order={% if sort_by == 'name' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Citizen</th>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=category&sort_order={% if sort_by == 'category' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Category</th>
+            <th>Problem</th>
+            <th>Location</th>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=priority&sort_order={% if sort_by == 'priority' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Priority</th>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=status&sort_order={% if sort_by == 'status' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">Status</th>
+            <th class="sortable" onclick="window.location.href='?filter_status={{ filter_status }}&filter_priority={{ filter_priority }}&sort_by=filed_at&sort_order={% if sort_by == 'filed_at' and sort_order == 'asc' %}desc{% else %}asc{% endif %}'">📅 Reported On</th>
+            <th style="text-align: center;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in filtered_complaints %}
+            <tr>
+              <td><span class="ticket-id">{{ x.id }}</span></td>
+              <td>
+                <span style="font-weight: 600;">{{ x.name }}</span><br>
+                <small style="color: var(--text-muted);">{{ x.phone }}</small>
+              </td>
+              <td>{{ x.category }}</td>
+              <td>
+                <div style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem;">
+                  {{ x.description }}
+                </div>
+              </td>
+              <td>
+                {% if x.maps_link %}
+                  <a href="{{ x.maps_link }}" target="_blank" style="color: var(--info); font-weight: 500;">📍 {{ x.location }}</a>
+                {% else %}
+                  {{ x.location }}
+                {% endif %}
+              </td>
+              <td class="pri-{{ x.priority }}">{{ x.priority|upper }}</td>
+              <td><span class="badge {{ x.status }}">{{ x.status.replace('_',' ').title() }}</span></td>
+              <td><small style="font-weight: 500; color: var(--text-muted);">{{ x.filed_at }}</small></td>
+              <td style="text-align: center;">
+                <div class="acts" style="justify-content: center;">
+                  {% if x.status=='pending' %}
+                    <a href="/caction/{{ x.id }}/in_review" class="btn btn-info">Review</a>
+                  {% endif %}
+                  {% if x.status=='in_review' %}
+                    <a href="/caction/{{ x.id }}/in_progress" class="btn btn-accent">Start</a>
+                  {% endif %}
+                  {% if x.status=='in_progress' %}
+                    <a href="/caction/{{ x.id }}/resolved" class="btn btn-primary">Done</a>
+                  {% endif %}
+                  <a href="/caction/{{ x.id }}/rejected" class="btn btn-danger">X</a>
+                  <a href="/complaint/{{ x.id }}" class="btn btn-neutral">View</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="icon">📁</div>
+        <p>No complaints found matching the current filters.</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Double Grid layout for Certificates & Works -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; flex-wrap: wrap;">
+      
+      <!-- Certificate Requests Panel -->
+      <div class="table-sec glass-card" style="align-self: start;">
+        <div class="table-header">
+          <h3>📄 Certificate Requests</h3>
+        </div>
+        
+        {% if pending_certs or processing_certs %}
+        <table style="min-width: 100%;">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Applicant</th>
+              <th>Type</th>
+              <th>Status</th>
+              <th style="text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for x in pending_certs %}
+              <tr>
+                <td><span class="ticket-id" style="font-size: 0.85rem;">{{ x.id }}</span></td>
+                <td>
+                  <span style="font-weight: 600;">{{ x.name }}</span><br>
+                  <small style="color: var(--text-muted);">{{ x.purpose[:20] }}...</small>
+                </td>
+                <td>{{ x.type }}</td>
+                <td><span class="badge pending">Pending</span></td>
+                <td style="text-align: center;">
+                  <div class="acts" style="justify-content: center;">
+                    <a href="/certaction/{{ x.id }}/processing" class="btn btn-info">Process</a>
+                    <a href="/certaction/{{ x.id }}/rejected" class="btn btn-danger">X</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            {% for x in processing_certs %}
+              <tr>
+                <td><span class="ticket-id" style="font-size: 0.85rem;">{{ x.id }}</span></td>
+                <td>
+                  <span style="font-weight: 600;">{{ x.name }}</span><br>
+                  <small style="color: var(--text-muted);">{{ x.purpose[:20] }}...</small>
+                </td>
+                <td>{{ x.type }}</td>
+                <td><span class="badge processing">Processing</span></td>
+                <td style="text-align: center;">
+                  <div class="acts" style="justify-content: center;">
+                    <a href="/certaction/{{ x.id }}/ready" class="btn btn-primary">Ready</a>
+                    <a href="/certaction/{{ x.id }}/rejected" class="btn btn-danger">X</a>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state" style="padding: 2rem;">
+          <div class="icon">📄</div>
+          <p>No active certificate requests.</p>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Development Works Panel -->
+      <div class="table-sec glass-card" style="align-self: start;">
+        <div class="table-header">
+          <h3>🛠️ Active Development Works</h3>
+        </div>
+        
+        {% if works %}
+        <table style="min-width: 100%;">
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Status</th>
+              <th style="text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for w in works %}
+              {% if w.status != 'resolved' and w.status != 'rejected' %}
+              <tr>
+                <td style="font-weight: 600; font-size: 0.85rem;">{{ w.title }}</td>
+                <td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+                <td style="text-align: center;">
+                  <div class="acts" style="justify-content: center;">
+                    {% if w.status=='pending' %}
+                      <a href="/waction/{{ w.id }}/in_progress" class="btn btn-info">Start</a>
+                    {% endif %}
+                    {% if w.status=='in_progress' %}
+                      <a href="/waction/{{ w.id }}/resolved" class="btn btn-primary">Done</a>
+                    {% endif %}
+                    <a href="/waction/{{ w.id }}/rejected" class="btn btn-danger">X</a>
+                  </div>
+                </td>
+              </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state" style="padding: 2rem;">
+          <div class="icon">🛠️</div>
+          <p>No development works added.</p>
+        </div>
+        {% endif %}
+        
+        <form method="POST" action="/addwork" class="quick-form">
+          <div class="quick-form-inner">
+            <input type="text" name="title" placeholder="Define new infrastructure project..." required>
+            <button type="submit" class="btn btn-primary">+ Add Work</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Quick Announcements Panel -->
+    <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 2rem; flex-wrap: wrap;">
+      
+      <!-- Announcements List -->
+      <div class="table-sec glass-card" style="align-self: start;">
+        <div class="table-header">
+          <h3>📢 Public Announcements</h3>
+        </div>
+        
+        {% if announcements %}
+        <table style="min-width: 100%;">
+          <thead>
+            <tr>
+              <th style="width: 200px;">Topic</th>
+              <th>Message Details</th>
+              <th style="width: 120px;">Posted Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in announcements %}
+              <tr>
+                <td style="font-weight: 700; color: var(--primary);">{{ a.title }}</td>
+                <td style="font-size: 0.85rem;">{{ a.body }}</td>
+                <td><small style="color: var(--text-muted); font-weight: 500;">{{ a.date }}</small></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+          <div class="icon">📢</div>
+          <p>No announcements found.</p>
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Add Announcement Panel -->
+      <div class="glass-card" style="padding: 1.5rem; align-self: start;">
+        <h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.5rem;">📣 Broadcast Announcement</h3>
+        <form method="POST" action="/announce">
+          <div class="form-group">
+            <label for="announce-title" class="form-label">Announcement Title</label>
+            <input type="text" id="announce-title" name="title" placeholder="e.g. Grama Sabha Meet" required>
+          </div>
+          <div class="form-group">
+            <label for="announce-body" class="form-label">Message Details</label>
+            <textarea id="announce-body" name="body" rows="3" placeholder="Enter broadcast message here..." required></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.6rem;">Broadcast Post</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- Resolved / Closed History Logs -->
+    <div class="table-sec glass-card">
+      <div class="table-header">
+        <h3>✅ Resolved / Closed Items</h3>
+      </div>
+      {% if resolved_complaints %}
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Citizen Name</th>
+            <th>Category</th>
+            <th>Resolution Status</th>
+            <th style="text-align: center;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for x in resolved_complaints %}
+            <tr>
+              <td><span class="ticket-id">{{ x.id }}</span></td>
+              <td style="font-weight: 600;">{{ x.name }}</td>
+              <td>{{ x.category }}</td>
+              <td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+              <td style="text-align: center;">
+                <a href="/complaint/{{ x.id }}" class="btn btn-neutral" style="padding: 0.3rem 0.8rem;">View Logs</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty-state">
+        <div class="icon">✅</div>
+        <p>No historical resolved logs found.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>

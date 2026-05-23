@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+  <title>Sarpanch Dashboard Login</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body class="auth-body">
+  <div class="auth-card glass-card">
+    <div class="auth-header">
+      <h2>🏘️ Gram Panchayat</h2>
+      <p>Sarpanch Portal Login</p>
+    </div>
+    
+    {% if error %}
+    <div class="auth-error">
+      {{ error }}
+    </div>
+    {% endif %}
+    
+    <form method="POST">
+      <div class="form-group">
+        <label for="username" class="form-label">Username</label>
+        <input type="text" id="username" name="username" placeholder="Enter username" required>
+      </div>
+      
+      <div class="form-group">
+        <label for="password" class="form-label">Password</label>
+        <input type="password" id="password" name="password" placeholder="Enter password" required>
+      </div>
+      
+      <button type="submit" class="btn btn-primary" style="width: 100%; padding: 0.75rem;">Login</button>
+    </form>
+    
+    <p style="text-align: center; font-size: 0.75rem; color: var(--text-muted); margin-top: 1.5rem;">
+      Contact administrator for credentials
+    </p>
+  </div>
+</body>
+</html>
