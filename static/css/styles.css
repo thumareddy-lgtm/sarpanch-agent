@@ -308,13 +308,13 @@ table {
 }
 
 th {
-  background: hsl(210, 14%, 95%);
+  background: hsl(205, 80%, 90%); /* Soft premium light blue */
   padding: 0.9rem 1.2rem;
-  font-size: 0.75rem;
+  font-size: 0.82rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 700;
-  color: var(--text-muted);
+  color: #000000; /* High contrast black text */
   text-align: left;
   border-block-end: 2px solid var(--border-light);
 }
@@ -325,7 +325,7 @@ th.sortable {
 }
 
 th.sortable:hover {
-  background: hsl(210, 14%, 90%);
+  background: hsl(205, 70%, 82%); /* Darker light blue on hover */
 }
 
 td {
