@@ -60,6 +60,55 @@
       scroll-margin-top: 100px !important;
     }
 
+    /* ── Pagination Controls ─────────────────────────────── */
+    .pagination-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--border-light);
+      background: rgba(255,255,255,0.5);
+      border-radius: 0 0 12px 12px;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .pagination-info {
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .pagination-btns {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+    .page-btn {
+      padding: 0.35rem 0.85rem;
+      border-radius: 8px;
+      border: 1.5px solid var(--primary);
+      background: transparent;
+      color: var(--primary);
+      font-size: 0.82rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.18s;
+    }
+    .page-btn:hover:not(:disabled) {
+      background: var(--primary);
+      color: #fff;
+    }
+    .page-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .page-counter {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--text-main);
+      min-width: 80px;
+      text-align: center;
+    }
+
     @media (max-width: 1200px) {
       .dashboard-grid {
         grid-template-columns: 1fr;
@@ -308,9 +357,9 @@
             <th style="text-align: center;">Actions</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody id="complaints-tbody">
           {% for x in filtered_complaints %}
-            <tr>
+            <tr data-row-index="{{ loop.index0 }}">
               <td data-label="ID"><span class="ticket-id">{{ x.id }}</span></td>
               <td data-label="Citizen">
                 <span style="font-weight: 600;">{{ x.name }}</span><br>
@@ -351,6 +400,17 @@
           {% endfor %}
         </tbody>
       </table>
+
+      <!-- Pagination Bar (rendered only when table is present) -->
+      <div class="pagination-bar" id="complaints-pagination">
+        <div class="pagination-info" id="complaints-page-info">Showing 1–5 of N</div>
+        <div class="pagination-btns">
+          <button class="page-btn" id="complaints-prev" onclick="complaintsPage(-1)" disabled>← Prev</button>
+          <span class="page-counter" id="complaints-page-counter">Page 1</span>
+          <button class="page-btn" id="complaints-next" onclick="complaintsPage(1)">Next →</button>
+        </div>
+      </div>
+
       {% else %}
       <div class="empty-state">
         <div class="icon">📁</div>
@@ -570,8 +630,62 @@
   </div> <!-- Close Two-Column Grid (.dashboard-grid) -->
 
   <script>
-    // Smooth auto-scrolling to target elements (Only on explicit hashtag jumps, not on simple page loads/refreshes)
-    window.addEventListener('DOMContentLoaded', (event) => {
+    // ── Complaints Pagination ─────────────────────────────────
+    const COMPLAINTS_PER_PAGE = 5;
+    let complaintsCurrentPage = 0;
+
+    function initComplaintsPagination() {
+      const tbody = document.getElementById('complaints-tbody');
+      if (!tbody) return;
+      const rows = Array.from(tbody.querySelectorAll('tr[data-row-index]'));
+      const total = rows.length;
+      if (total === 0) {
+        const pbar = document.getElementById('complaints-pagination');
+        if (pbar) pbar.style.display = 'none';
+        return;
+      }
+      renderComplaintsPage(rows, total, complaintsCurrentPage);
+    }
+
+    function renderComplaintsPage(rows, total, page) {
+      const totalPages = Math.ceil(total / COMPLAINTS_PER_PAGE);
+      const start = page * COMPLAINTS_PER_PAGE;
+      const end = Math.min(start + COMPLAINTS_PER_PAGE, total);
+
+      rows.forEach((row, i) => {
+        row.style.display = (i >= start && i < end) ? '' : 'none';
+      });
+
+      document.getElementById('complaints-page-info').textContent =
+        `Showing ${start + 1}–${end} of ${total} complaint${total !== 1 ? 's' : ''}`;
+      document.getElementById('complaints-page-counter').textContent =
+        `Page ${page + 1} of ${totalPages}`;
+      document.getElementById('complaints-prev').disabled = (page === 0);
+      document.getElementById('complaints-next').disabled = (page >= totalPages - 1);
+
+      // Hide pagination bar entirely if only 1 page
+      const pbar = document.getElementById('complaints-pagination');
+      if (pbar) pbar.style.display = (totalPages <= 1) ? 'none' : 'flex';
+    }
+
+    function complaintsPage(delta) {
+      const tbody = document.getElementById('complaints-tbody');
+      if (!tbody) return;
+      const rows = Array.from(tbody.querySelectorAll('tr[data-row-index]'));
+      const total = rows.length;
+      const totalPages = Math.ceil(total / COMPLAINTS_PER_PAGE);
+      complaintsCurrentPage = Math.max(0, Math.min(complaintsCurrentPage + delta, totalPages - 1));
+      renderComplaintsPage(rows, total, complaintsCurrentPage);
+      // Scroll back to top of table
+      const sec = document.getElementById('complaints-sec');
+      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // ── Smooth auto-scrolling (hash jumps only) ───────────────
+    window.addEventListener('DOMContentLoaded', () => {
+      // Init pagination first
+      initComplaintsPagination();
+
       const hash = window.location.hash;
       if (hash) {
         const el = document.querySelector(hash);
