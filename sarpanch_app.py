@@ -364,7 +364,7 @@ MENU_EN = ("Namaskaram! Welcome to *{v}* Gram Panchayat\nSarpanch: *{s}*\n\n"
     "1️⃣ Register Complaint\n2️⃣ Request Certificate\n3️⃣ Track Status\n"
     "4️⃣ Government Schemes\n5️⃣ Development Works\n6️⃣ Announcements\n7️⃣ Office Info\n\n"
     "📍 You can share your location or 🎤 send voice message\n"
-    "తెలుగు కావాలంటే *telugu* టైప్ చేయండి.").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
+    "Type *telugu* for Telugu menu").format(v=VILLAGE_NAME,s=SARPANCH_NAME)
 
 MENU_TE = ("నమస్కారం! *{v}* గ్రామ పంచాయతీకి స్వాగతం\nసర్పంచ్: *{s}*\n\n"
     "1️⃣ ఫిర్యాదు నమోదు చేయండి\n2️⃣ సర్టిఫికెట్ అభ్యర్థించండి\n3️⃣ ఫిర్యాదు స్థితి తెలుసుకోండి\n"
@@ -1264,7 +1264,9 @@ th{background:#f4f5f7}
 <div class="container">
 <table>
 <thead>
-<tr><th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th></tr>
+<tr>
+<th>Photo</th><th>Username</th><th>Village</th><th>Phone</th><th>Email</th><th>Joined</th>
+</tr>
 </thead>
 <tbody>
 {% for s in sarpanchs %}
@@ -1438,7 +1440,7 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 {% if x.status=='in_progress' %}<a href="/caction/{{ x.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/caction/{{ x.id }}/rejected" class="btn br">X</a>
 <a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a>
-</td>
+</div></td>
 </tr>
 {% endfor %}
 </tbody>
@@ -1448,16 +1450,16 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📋 Certificate Requests</div>
 {% if pending_certs or processing_certs %}
-<table>
+</table>
 <thead><tr><th>ID</th><th>Name</th><th>Type</th><th>Purpose</th><th>Status</th><th>Actions</th></tr></thead>
 <tbody>
 {% for x in pending_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge pending">Pending</span></td>
-<td><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+<tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge pending">Pending</span></td>
+<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/processing" class="btn bb">Process</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></tr>
 {% endfor %}
 {% for x in processing_certs %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.type }}</td><td>{{ x.purpose }}</td><td><span class="badge processing">Processing</span></td>
-<td><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></td></tr>
+<tr><td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.type }}</td><td style="border:1px solid #ddd;padding:8px">{{ x.purpose }}</td><td style="border:1px solid #ddd;padding:8px"><span class="badge processing">Processing</span></td>
+<td style="border:1px solid #ddd;padding:8px"><a href="/certaction/{{ x.id }}/ready" class="btn bg">Ready</a> <a href="/certaction/{{ x.id }}/rejected" class="btn br">X</a></tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1466,16 +1468,29 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">🛠️ Development Works</div>
 {% if works %}
-<table>
-<thead><tr><th>ID</th><th>Title</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Title</th>
+<th>Status</th>
+<th>Updated</th>
+<th>Actions</th>
+</tr>
+</thead>
 <tbody>
 {% for w in works %}
-<tr><td>{{ w.id }}</td><td>{{ w.title }}</td><td><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td><td>{{ w.updated }}</td>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ w.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.title }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ w.status }}">{{ w.status.replace('_',' ').title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px">{{ w.updated }}</td>
 <td class="acts">
 {% if w.status=='pending' %}<a href="/waction/{{ w.id }}/in_progress" class="btn bb">Start</a>{% endif %}
 {% if w.status=='in_progress' %}<a href="/waction/{{ w.id }}/resolved" class="btn bg">Done</a>{% endif %}
 <a href="/waction/{{ w.id }}/rejected" class="btn br">X</a>
-</td></tr>
+</td>
+</tr>
 {% endfor %}
 </tbody>
 </table>
@@ -1488,11 +1503,24 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">📢 Announcements</div>
 {% if announcements %}
-<table><thead><tr><th>Title</th><th>Message</th><th>Date</th></tr></thead><tbody>
+<table class="data-table">
+<thead>
+<tr>
+<th>Title</th>
+<th>Message</th>
+<th>Date</th>
+</tr>
+</thead>
+<tbody>
 {% for a in announcements %}
-<tr><td><strong>{{ a.title }}</strong></td><td>{{ a.body }}</td><td style="font-size:11px;color:#888">{{ a.date }}</td></tr>
+<tr>
+<td style="border:1px solid #ddd;padding:8px"><strong>{{ a.title }}</strong></td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.body }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ a.date }}</td>
+</tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No announcements.</div>{% endif %}
 <form method="post" action="/announce" style="padding:14px 18px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap">
 <input type="text" name="title" placeholder="Title" required style="flex:1;border:1px solid var(--border);border-radius:6px;padding:8px 12px">
@@ -1503,13 +1531,28 @@ td{padding:10px 12px;font-size:12px;border-bottom:1px solid var(--border);vertic
 <div class="sec">
 <div class="sh">✅ Resolved / Closed Items</div>
 {% if resolved_complaints %}
-<table><thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Status</th><th>Action</th></tr></thead>
+<table class="data-table">
+<thead>
+<tr>
+<th>ID</th>
+<th>Name</th>
+<th>Category</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+</thead>
 <tbody>
 {% for x in resolved_complaints %}
-<tr><td>{{ x.id }}</td><td>{{ x.name }}</td><td>{{ x.category }}</td><td><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
-<td><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td></tr>
+<tr>
+<td style="border:1px solid #ddd;padding:8px">{{ x.id }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.name }}</td>
+<td style="border:1px solid #ddd;padding:8px">{{ x.category }}</td>
+<td style="border:1px solid #ddd;padding:8px"><span class="badge {{ x.status }}">{{ x.status.title() }}</span></td>
+<td style="border:1px solid #ddd;padding:8px"><a href="/complaint/{{ x.id }}" class="btn bb" style="background:#666">View</a></td>
+</tr>
 {% endfor %}
-</tbody></table>
+</tbody>
+</table>
 {% else %}<div class="empty">No resolved items.</div>{% endif %}
 </div>
 <script>
