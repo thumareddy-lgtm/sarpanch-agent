@@ -1,4 +1,4 @@
-mport os, uuid, sqlite3, requests, re, hashlib, json
+import os, uuid, sqlite3, requests, re, hashlib, json
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, session, url_for
 from werkzeug.utils import secure_filename
