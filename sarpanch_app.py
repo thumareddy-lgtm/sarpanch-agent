@@ -1326,6 +1326,29 @@ def add_sarpanch():
     return render_template('add_sarpanch.html', error=error)
 
 
+# ── VOICE STREAM PROXY (Mobile-friendly inline playback) ─────
+@app.route("/voice-stream")
+def voice_stream():
+    """Serve local OGG voice files with correct Content-Type so mobile plays inline."""
+    from flask import Response
+    voice_url = request.args.get("url", "")
+    if not voice_url or not voice_url.startswith("/static/voices/"):
+        return "Not found", 404
+    filepath = voice_url.lstrip("/")
+    if not os.path.exists(filepath):
+        return "Voice file not found", 404
+    try:
+        with open(filepath, "rb") as f:
+            data = f.read()
+        resp = Response(data, status=200, mimetype="audio/ogg")
+        resp.headers["Content-Disposition"] = "inline"
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
+    except Exception as e:
+        return f"Error: {e}", 500
+
+
 # ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
     init_db()
