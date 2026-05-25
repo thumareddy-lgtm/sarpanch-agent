@@ -1,4 +1,6 @@
 import os, uuid, sqlite3, requests, re, hashlib, json
+import cloudinary
+import cloudinary.uploader
 from datetime import datetime
 from flask import Flask, request, render_template, redirect, session, url_for
 from werkzeug.utils import secure_filename
@@ -20,6 +22,22 @@ UPLOAD_FOLDER = 'static/uploads'
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs('static/voices', exist_ok=True)
+
+# ── Cloudinary Config (Permanent Voice Storage) ──────────────
+CLOUD_NAME    = os.environ.get("CLOUDINARY_CLOUD_NAME", "")
+CLOUD_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "")
+CLOUD_SECRET  = os.environ.get("CLOUDINARY_API_SECRET", "")
+
+if CLOUD_NAME and CLOUD_API_KEY and CLOUD_SECRET:
+    cloudinary.config(
+        cloud_name = CLOUD_NAME,
+        api_key    = CLOUD_API_KEY,
+        api_secret = CLOUD_SECRET,
+        secure     = True
+    )
+    print("✅ Cloudinary configured for permanent voice storage")
+else:
+    print("⚠️  Cloudinary not configured — voices will use local storage (temporary on Render)")
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "sarpanch_secret_2024")
@@ -332,42 +350,68 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
+    """Download voice from WhatsApp and store permanently on Cloudinary (or local fallback)."""
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
         return None
-   
-    voice_dir = os.path.join('static', 'voices')
-    os.makedirs(voice_dir, exist_ok=True)
-   
+
     headers = {"Authorization": f"Bearer {META_TOKEN}"}
-   
+
     try:
-        media_resp = requests.get(f"https://graph.facebook.com/v19.0/{voice_id}", headers=headers, timeout=10)
-       
+        # Step 1: Get download URL from WhatsApp
+        media_resp = requests.get(
+            f"https://graph.facebook.com/v19.0/{voice_id}",
+            headers=headers, timeout=10
+        )
         if media_resp.status_code != 200:
             print(f"❌ Failed to get media info: {media_resp.status_code}")
             return None
-       
+
         download_url = media_resp.json().get("url")
         if not download_url:
             print("❌ No download URL in response")
             return None
-       
+
+        # Step 2: Download the raw audio bytes
         audio_resp = requests.get(download_url, headers=headers, timeout=30)
-       
         if audio_resp.status_code != 200:
             print(f"❌ Failed to download audio: {audio_resp.status_code}")
             return None
-       
-        filename = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
-        filepath = os.path.join(voice_dir, filename)
-       
+
+        audio_bytes = audio_resp.content
+        public_id   = f"sarpanch_voices/{complaint_id}_{int(datetime.now().timestamp())}"
+
+        # Step 3a: Upload to Cloudinary if configured (PERMANENT)
+        if CLOUD_NAME and CLOUD_API_KEY and CLOUD_SECRET:
+            try:
+                import io
+                result = cloudinary.uploader.upload(
+                    io.BytesIO(audio_bytes),
+                    resource_type = "video",   # Cloudinary uses 'video' for audio files
+                    public_id     = public_id,
+                    folder        = "sarpanch_voices",
+                    overwrite     = True,
+                    format        = "mp3"      # Convert ogg→mp3 for universal browser playback
+                )
+                cloud_url = result.get("secure_url", "")
+                if cloud_url:
+                    print(f"✅ Voice uploaded to Cloudinary: {cloud_url}")
+                    return cloud_url
+                else:
+                    print("⚠️  Cloudinary upload returned no URL, falling back to local")
+            except Exception as e:
+                print(f"⚠️  Cloudinary upload failed: {e}, falling back to local")
+
+        # Step 3b: Fallback — save locally (will be lost on Render restart)
+        voice_dir = os.path.join('static', 'voices')
+        os.makedirs(voice_dir, exist_ok=True)
+        filename  = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
+        filepath  = os.path.join(voice_dir, filename)
         with open(filepath, 'wb') as f:
-            f.write(audio_resp.content)
-       
-        print(f"✅ Voice saved permanently: {filename}")
+            f.write(audio_bytes)
+        print(f"⚠️  Voice saved locally (temporary): {filename}")
         return f"/static/voices/{filename}"
-       
+
     except Exception as e:
         print(f"❌ Voice download error: {e}")
         return None

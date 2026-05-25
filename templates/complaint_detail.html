@@ -80,12 +80,26 @@
         {% if complaint.get('media_type') == 'voice' and complaint.get('media_url') %}
         <div class="detail-field" style="background: hsl(142, 50%, 97%); border: 1px solid hsl(142, 50%, 90%); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem;">
           <span class="label" style="color: var(--primary);">🎤 Recorded Voice Note</span>
-          <audio controls class="audio-player" style="margin-top: 0.5rem;">
-            <source src="{{ complaint.get('media_url') }}" type="audio/ogg">
+          <audio controls class="audio-player" style="margin-top: 0.5rem; width: 100%;">
+            {% set voice_url = complaint.get('media_url') %}
+            {% if 'cloudinary' in voice_url or voice_url.endswith('.mp3') %}
+              <source src="{{ voice_url }}" type="audio/mp3">
+              <source src="{{ voice_url }}" type="audio/mpeg">
+            {% else %}
+              <source src="{{ voice_url }}" type="audio/ogg">
+              <source src="{{ voice_url }}" type="audio/webm">
+            {% endif %}
             Your browser does not support the audio element.
           </audio>
+          <div style="margin-top: 0.5rem;">
+            <a href="{{ complaint.get('media_url') }}" target="_blank" download
+               style="font-size: 0.8rem; color: var(--primary); font-weight: 600; text-decoration: none;">
+              ⬇️ Download Voice Note
+            </a>
+          </div>
         </div>
         {% endif %}
+
       </div>
 
       <!-- Right side: Workflows -->
