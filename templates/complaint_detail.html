@@ -81,53 +81,45 @@
         <div class="detail-field" style="background: hsl(142, 50%, 97%); border: 1px solid hsl(142, 50%, 90%); padding: 1rem; border-radius: var(--radius-sm); margin-bottom: 1.25rem;">
           <span class="label" style="color: var(--primary);">🎤 Recorded Voice Note</span>
           {% set voice_url = complaint.get('media_url') %}
-          {% set is_cloud = 'cloudinary' in voice_url or voice_url.endswith('.mp3') %}
+          {% set is_cloud   = 'cloudinary' in voice_url %}
+          {% set is_db      = voice_url.startswith('/voice/') %}
+          {% set is_local   = voice_url.startswith('/static/voices/') %}
 
-          <!-- Mobile-compatible audio player -->
           <audio
             id="voicePlayer"
             controls
             playsinline
             preload="metadata"
-            controlslist="nodownload"
             style="margin-top: 0.5rem; width: 100%; border-radius: 8px;"
           >
             {% if is_cloud %}
               <source src="{{ voice_url }}" type="audio/mpeg">
-              <source src="{{ voice_url }}" type="audio/mp3">
+            {% elif is_db %}
+              {# DB-stored OGG — served via Flask route with correct Content-Type #}
+              <source src="{{ voice_url }}" type="audio/ogg; codecs=opus">
+              <source src="{{ voice_url }}" type="audio/webm">
             {% else %}
-              <!-- For local ogg: serve via proxy route with correct Content-Type -->
+              {# Legacy local file — use proxy #}
               <source src="/voice-stream?url={{ voice_url | urlencode }}" type="audio/ogg; codecs=opus">
-              <source src="/voice-stream?url={{ voice_url | urlencode }}" type="audio/webm">
             {% endif %}
           </audio>
 
-          <!-- Fallback message if audio doesn't load -->
-          <p id="audioFallback" style="display:none; font-size:0.82rem; color: var(--danger); margin-top:0.4rem;">
-            ⚠️ Your browser can't play this format inline.
-          </p>
-
-          <!-- Download always available -->
-          <div style="margin-top: 0.6rem; display: flex; align-items: center; gap: 1rem;">
+          <div style="margin-top: 0.6rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
             <a href="{{ voice_url }}" target="_blank"
-               style="font-size: 0.82rem; color: var(--primary); font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 0.25rem;">
+               style="font-size: 0.82rem; color: var(--primary); font-weight: 600; text-decoration: none;">
               ⬇️ Download Voice Note
             </a>
-            {% if is_cloud %}
-              <span style="font-size: 0.75rem; color: #22c55e; font-weight: 600;">☁️ Cloud Stored (Permanent)</span>
+            {% if is_db %}
+              <span style="font-size: 0.75rem; color: #22c55e; font-weight: 700;">🗄️ Stored in Database (Permanent)</span>
+            {% elif is_cloud %}
+              <span style="font-size: 0.75rem; color: #22c55e; font-weight: 700;">☁️ Cloud Stored (Permanent)</span>
             {% else %}
-              <span style="font-size: 0.75rem; color: #f59e0b; font-weight: 600;">⚠️ Local (setup Cloudinary for permanent)</span>
+              <span style="font-size: 0.75rem; color: #f59e0b; font-weight: 700;">⚠️ Local storage (temporary)</span>
             {% endif %}
           </div>
-
-          <script>
-            // Detect mobile playback failure and show fallback
-            document.getElementById('voicePlayer').addEventListener('error', function() {
-              document.getElementById('audioFallback').style.display = 'block';
-            }, true);
-          </script>
         </div>
         {% endif %}
+
 
 
       </div>

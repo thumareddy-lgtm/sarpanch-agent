@@ -1,4 +1,4 @@
-import os, uuid, sqlite3, requests, re, hashlib, json
+import os, uuid, sqlite3, requests, re, hashlib, json, base64
 import cloudinary
 import cloudinary.uploader
 from datetime import datetime
@@ -208,6 +208,23 @@ def init_db():
    
     conn.commit()
     conn.close()
+    
+    conn2, db_type2 = get_db()
+    cur2 = conn2.cursor()
+    try:
+        if db_type2 == "pg":
+            cur2.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS voice_data TEXT;")
+        else:
+            cur2.execute("PRAGMA table_info(complaints)")
+            cols = [row[1] if isinstance(row, tuple) else row['name'] for row in cur2.fetchall()]
+            if 'voice_data' not in cols:
+                cur2.execute("ALTER TABLE complaints ADD COLUMN voice_data TEXT DEFAULT ''")
+        conn2.commit()
+        print("✅ voice_data column ready")
+    except Exception as e:
+        print(f"⚠️  voice_data column: {e}")
+    finally:
+        conn2.close()
     print(f"✅ Database ready ({db_type})")
 
 init_db()
@@ -220,12 +237,12 @@ def insert_complaint(c):
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
         INSERT INTO complaints (id,name,phone,category,description,location,priority,status,filed_at,{u},notes,
-        location_lat,location_lng,location_address,maps_link,media_type,media_url,village)
-        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
+        location_lat,location_lng,location_address,maps_link,media_type,media_url,village,voice_data)
+        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
         (c["id"],c["name"],c["phone"],c["category"],c["desc"],c.get("location",""),c["priority"],"pending",c["filed_at"],c["filed_at"],"",
          c.get("location_lat"),c.get("location_lng"),c.get("location_address",""),c.get("maps_link",""),
-         c.get("media_type",""),c.get("media_url",""), c.get("village","")))
+         c.get("media_type",""),c.get("media_url",""), c.get("village",""), c.get("voice_data","")))
     conn.commit()
     conn.close()
 
@@ -350,71 +367,62 @@ def update_sarpanch_photo(username, photo_path):
 
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
-    """Download voice from WhatsApp and store permanently on Cloudinary (or local fallback)."""
+    """
+    Download voice from WhatsApp.
+    Returns (media_url, base64_audio_data) tuple.
+    """
     if not META_TOKEN:
         print("❌ No META_TOKEN for voice download")
-        return None
+        return None, None
 
     headers = {"Authorization": f"Bearer {META_TOKEN}"}
 
     try:
-        # Step 1: Get download URL from WhatsApp
         media_resp = requests.get(
             f"https://graph.facebook.com/v19.0/{voice_id}",
             headers=headers, timeout=10
         )
         if media_resp.status_code != 200:
             print(f"❌ Failed to get media info: {media_resp.status_code}")
-            return None
+            return None, None
 
         download_url = media_resp.json().get("url")
         if not download_url:
             print("❌ No download URL in response")
-            return None
+            return None, None
 
-        # Step 2: Download the raw audio bytes
         audio_resp = requests.get(download_url, headers=headers, timeout=30)
         if audio_resp.status_code != 200:
             print(f"❌ Failed to download audio: {audio_resp.status_code}")
-            return None
+            return None, None
 
         audio_bytes = audio_resp.content
-        public_id   = f"sarpanch_voices/{complaint_id}_{int(datetime.now().timestamp())}"
 
-        # Step 3a: Upload to Cloudinary if configured (PERMANENT)
         if CLOUD_NAME and CLOUD_API_KEY and CLOUD_SECRET:
             try:
                 import io
                 result = cloudinary.uploader.upload(
                     io.BytesIO(audio_bytes),
-                    resource_type = "video",   # Cloudinary uses 'video' for audio files
-                    public_id     = public_id,
-                    folder        = "sarpanch_voices",
-                    overwrite     = True,
-                    format        = "mp3"      # Convert ogg→mp3 for universal browser playback
+                    resource_type="video",
+                    public_id=f"sarpanch_voices/{complaint_id}_{int(datetime.now().timestamp())}",
+                    overwrite=True,
+                    format="mp3"
                 )
                 cloud_url = result.get("secure_url", "")
                 if cloud_url:
                     print(f"✅ Voice uploaded to Cloudinary: {cloud_url}")
-                    return cloud_url
-                else:
-                    print("⚠️  Cloudinary upload returned no URL, falling back to local")
+                    return cloud_url, None
             except Exception as e:
-                print(f"⚠️  Cloudinary upload failed: {e}, falling back to local")
+                print(f"⚠️  Cloudinary upload failed: {e}, falling back to DB storage")
 
-        # Step 3b: Fallback — save locally (will be lost on Render restart)
-        voice_dir = os.path.join('static', 'voices')
-        os.makedirs(voice_dir, exist_ok=True)
-        filename  = f"voice_{complaint_id}_{int(datetime.now().timestamp())}.ogg"
-        filepath  = os.path.join(voice_dir, filename)
-        with open(filepath, 'wb') as f:
-            f.write(audio_bytes)
-        print(f"⚠️  Voice saved locally (temporary): {filename}")
-        return f"/static/voices/{filename}"
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        db_url = f"/voice/{complaint_id}"
+        print(f"✅ Voice stored in database permanently for complaint {complaint_id}")
+        return db_url, audio_b64
 
     except Exception as e:
         print(f"❌ Voice download error: {e}")
-        return None
+        return None, None
 
 # ── Helper Functions ─────────────────────────────────────────
 def detect_village_from_coords(lat, lng):
@@ -523,7 +531,6 @@ def bot_reply(user_msg, ctx, media_info=None):
    
     if media_info and media_info.get("type") == "voice":
         ctx["media_type"] = "voice"
-        ctx["media_url"] = media_info.get("url", "")
         ctx["temp_audio_id"] = media_info.get("audio_id", "")
         ctx["state"] = "waiting_for_location"
         return "🎤 *Voice received [వాయిస్ మెసేజ్ అందుకుంది]*!\n\n📍 Please share your location (📎 → Location) or type your village name [దయచేసి మీ లొకేషన్ షేర్ చేయండి లేదా మీ గ్రామం పేరు టైప్ చేయండి]:", ctx
@@ -636,12 +643,8 @@ def bot_reply(user_msg, ctx, media_info=None):
         detected_village = detect_village_from_text(msg)
         if detected_village:
             ctx["village"] = detected_village
-            print(f"✅ Village detected from text: {detected_village}")
         elif not ctx.get("location_lat"):
             ctx["location_text"] = msg
-            print(f"📍 Location text saved: {msg}")
-        else:
-            print(f"📍 Village from GPS: {ctx.get('village')}")
        
         ctx["state"] = "c_pri"
         return (
@@ -653,9 +656,6 @@ def bot_reply(user_msg, ctx, media_info=None):
         ), ctx
    
     if state == "c_pri":
-        print(f"🔍 c_pri received: msg={msg}")
-        print(f"🔍 Current ctx: village={ctx.get('village')}, location_text={ctx.get('location_text')}")
-       
         pmap = {"1": "low", "2": "medium", "3": "high"}
         if msg not in pmap:
             return "⚡ Please reply with 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:", ctx
@@ -663,23 +663,19 @@ def bot_reply(user_msg, ctx, media_info=None):
         ref = new_id("CMP-")
         maps_link = ctx.get("maps_link", "")
        
-        village = ctx.get("village")
-        if not village or village == "Unknown":
-            village = ctx.get("location_text", "")
-        if not village or village == "":
-            village = VILLAGE_NAME
-       
-        print(f"✅ Final village for complaint: {village}")
+        village = ctx.get("village") or ctx.get("location_text") or "Unknown"
        
         lat = ctx.get("location_lat")
         lng = ctx.get("location_lng")
        
-        media_url = ctx.get("media_url", "")
+        media_url = ""
+        voice_data = ""
         if ctx.get("temp_audio_id"):
-            permanent_url = download_voice_permanently(ctx["temp_audio_id"], ref)
-            if permanent_url:
-                media_url = permanent_url
-                print(f"✅ Voice saved to: {permanent_url}")
+            voice_url, voice_b64 = download_voice_permanently(ctx["temp_audio_id"], ref)
+            if voice_url:
+                media_url = voice_url
+                voice_data = voice_b64 or ""
+                print(f"✅ Voice ready: {voice_url} (db_stored={bool(voice_b64)})")
        
         rec = {
             "id": ref,
@@ -696,7 +692,8 @@ def bot_reply(user_msg, ctx, media_info=None):
             "maps_link": maps_link,
             "media_type": "voice" if ctx.get("temp_audio_id") else "",
             "media_url": media_url,
-            "village": village
+            "village": village,
+            "voice_data": voice_data
         }
        
         print(f"🔍 Saving complaint: {rec}")
@@ -1348,6 +1345,38 @@ def voice_stream():
     except Exception as e:
         return f"Error: {e}", 500
 
+
+
+
+# ── VOICE FROM DATABASE (Permanent stream route) ─────────────
+@app.route("/voice/<cid>")
+def serve_voice_from_db(cid):
+    """Serve voice note from database as audio — permanent, works on web & mobile."""
+    from flask import Response
+    if 'sarpanch_username' not in session:
+        return "Unauthorized", 401
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        p = get_placeholder(db_type)
+        cur.execute(f"SELECT voice_data FROM complaints WHERE id = {p}", (cid,))
+        row = cur.fetchone()
+        conn.close()
+        if not row:
+            return "Complaint not found", 404
+        voice_b64 = row["voice_data"] if isinstance(row, dict) else row[0]
+        if not voice_b64:
+            return "No voice data stored", 404
+        audio_bytes = base64.b64decode(voice_b64)
+        resp = Response(audio_bytes, status=200, mimetype="audio/ogg")
+        resp.headers["Content-Disposition"] = "inline"
+        resp.headers["Content-Length"] = str(len(audio_bytes))
+        resp.headers["Accept-Ranges"] = "bytes"
+        resp.headers["Cache-Control"] = "private, max-age=86400"
+        return resp
+    except Exception as e:
+        print(f"❌ Voice serve error: {e}")
+        return f"Error: {e}", 500
 
 # ── RUN ──────────────────────────────────────────────────────
 if __name__ == "__main__":
