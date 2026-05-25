@@ -95,9 +95,9 @@
             {% if is_cloud %}
               <source src="{{ voice_url }}" type="audio/mpeg">
             {% elif is_db %}
-              {# DB-stored OGG — served via Flask route with correct Content-Type #}
+              {# DB-stored audio — format detected server-side, try mp3 first for iPhone #}
+              <source src="{{ voice_url }}" type="audio/mpeg">
               <source src="{{ voice_url }}" type="audio/ogg; codecs=opus">
-              <source src="{{ voice_url }}" type="audio/webm">
             {% else %}
               {# Legacy local file — use proxy #}
               <source src="/voice-stream?url={{ voice_url | urlencode }}" type="audio/ogg; codecs=opus">

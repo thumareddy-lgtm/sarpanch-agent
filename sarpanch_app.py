@@ -365,6 +365,46 @@ def update_sarpanch_photo(username, photo_path):
     conn.commit()
     conn.close()
 
+# ── OGG → MP3 CONVERSION (for universal mobile support) ─────
+def convert_ogg_to_mp3(ogg_bytes):
+    """
+    Convert OGG/Opus bytes to MP3 using ffmpeg.
+    MP3 plays on ALL devices including iPhone/iOS Safari.
+    Returns MP3 bytes, or None if ffmpeg not available.
+    """
+    import subprocess, tempfile
+    try:
+        # Write OGG to a temp file
+        with tempfile.NamedTemporaryFile(suffix='.ogg', delete=False) as f:
+            f.write(ogg_bytes)
+            ogg_path = f.name
+        mp3_path = ogg_path.replace('.ogg', '.mp3')
+        # Run ffmpeg conversion
+        result = subprocess.run(
+            ['ffmpeg', '-y', '-i', ogg_path,
+             '-codec:a', 'libmp3lame', '-qscale:a', '4',
+             mp3_path],
+            capture_output=True, timeout=30
+        )
+        if result.returncode == 0 and os.path.exists(mp3_path):
+            with open(mp3_path, 'rb') as f:
+                mp3_bytes = f.read()
+            os.unlink(ogg_path)
+            os.unlink(mp3_path)
+            print(f"\u2705 OGG converted to MP3 ({len(mp3_bytes)} bytes)")
+            return mp3_bytes
+        else:
+            print(f"\u26a0\ufe0f  ffmpeg failed: {result.stderr.decode()[:200]}")
+            if os.path.exists(ogg_path): os.unlink(ogg_path)
+            if os.path.exists(mp3_path): os.unlink(mp3_path)
+            return None
+    except FileNotFoundError:
+        print("\u26a0\ufe0f  ffmpeg not found on this server")
+        return None
+    except Exception as e:
+        print(f"\u26a0\ufe0f  OGG→MP3 conversion error: {e}")
+        return None
+
 # ── VOICE PERMANENT STORAGE FUNCTION ─────────────────────────
 def download_voice_permanently(voice_id, complaint_id):
     """
@@ -398,11 +438,20 @@ def download_voice_permanently(voice_id, complaint_id):
 
         audio_bytes = audio_resp.content
 
+        # ── Try OGG → MP3 conversion for iPhone/mobile support ──
+        mp3_bytes = convert_ogg_to_mp3(audio_bytes)
+        if mp3_bytes:
+            store_bytes  = mp3_bytes
+            mime_prefix  = "mp3:"     # plays on ALL devices including iPhone
+        else:
+            store_bytes  = audio_bytes
+            mime_prefix  = "ogg:"     # fallback: works on desktop/Android only
+
         if CLOUD_NAME and CLOUD_API_KEY and CLOUD_SECRET:
             try:
                 import io
                 result = cloudinary.uploader.upload(
-                    io.BytesIO(audio_bytes),
+                    io.BytesIO(store_bytes),
                     resource_type="video",
                     public_id=f"sarpanch_voices/{complaint_id}_{int(datetime.now().timestamp())}",
                     overwrite=True,
@@ -410,12 +459,13 @@ def download_voice_permanently(voice_id, complaint_id):
                 )
                 cloud_url = result.get("secure_url", "")
                 if cloud_url:
-                    print(f"✅ Voice uploaded to Cloudinary: {cloud_url}")
+                    print(f"\u2705 Voice uploaded to Cloudinary: {cloud_url}")
                     return cloud_url, None
             except Exception as e:
                 print(f"⚠️  Cloudinary upload failed: {e}, falling back to DB storage")
 
-        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        # Store in DB with mime prefix so serve route knows format
+        audio_b64 = mime_prefix + base64.b64encode(store_bytes).decode("utf-8")
         db_url = f"/voice/{complaint_id}"
         print(f"✅ Voice stored in database permanently for complaint {complaint_id}")
         return db_url, audio_b64
@@ -1351,7 +1401,7 @@ def voice_stream():
 # ── VOICE FROM DATABASE (Permanent stream route) ─────────────
 @app.route("/voice/<cid>")
 def serve_voice_from_db(cid):
-    """Serve voice note from database as audio — permanent, works on web & mobile."""
+    """Serve voice note from database — permanent, plays on web & mobile (iPhone included)."""
     from flask import Response
     if 'sarpanch_username' not in session:
         return "Unauthorized", 401
@@ -1367,12 +1417,24 @@ def serve_voice_from_db(cid):
         voice_b64 = row["voice_data"] if isinstance(row, dict) else row[0]
         if not voice_b64:
             return "No voice data stored", 404
-        audio_bytes = base64.b64decode(voice_b64)
-        resp = Response(audio_bytes, status=200, mimetype="audio/ogg")
+
+        # Parse format prefix: "mp3:BASE64" or "ogg:BASE64"
+        if voice_b64.startswith("mp3:"):
+            mime_type  = "audio/mpeg"
+            audio_bytes = base64.b64decode(voice_b64[4:])
+        elif voice_b64.startswith("ogg:"):
+            mime_type  = "audio/ogg"
+            audio_bytes = base64.b64decode(voice_b64[4:])
+        else:
+            # Legacy: no prefix, assume ogg
+            mime_type  = "audio/ogg"
+            audio_bytes = base64.b64decode(voice_b64)
+
+        resp = Response(audio_bytes, status=200, mimetype=mime_type)
         resp.headers["Content-Disposition"] = "inline"
-        resp.headers["Content-Length"] = str(len(audio_bytes))
-        resp.headers["Accept-Ranges"] = "bytes"
-        resp.headers["Cache-Control"] = "private, max-age=86400"
+        resp.headers["Content-Length"]      = str(len(audio_bytes))
+        resp.headers["Accept-Ranges"]       = "bytes"
+        resp.headers["Cache-Control"]       = "private, max-age=86400"
         return resp
     except Exception as e:
         print(f"❌ Voice serve error: {e}")
