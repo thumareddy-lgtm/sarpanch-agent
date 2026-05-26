@@ -513,11 +513,12 @@ def get_all_registered_villages():
         print(f"Error fetching registered villages: {e}")
         return ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad'] # fallback
 
-def detect_village_from_text(text):
+def detect_village_from_text(text, registered_villages=None):
     if not text:
         return None
     import difflib
-    registered_villages = get_all_registered_villages()
+    if registered_villages is None:
+        registered_villages = get_all_registered_villages()
     text_lower = text.lower().strip()
     
     # 1. Direct substring match (e.g. if text is "i live in kolukonda village")
@@ -1131,6 +1132,8 @@ def dashboard():
     filter_priority = request.args.get('filter_priority', 'ALL')
    
     try:
+        # Pre-fetch registered villages once to avoid N+1 queries in loops!
+        registered_list = get_all_registered_villages()
         ac = all_complaints()
         ce = all_certs()
         wo = all_works()
@@ -1192,7 +1195,7 @@ def dashboard():
                 comp_village = 'Kolukonda'
             else:
                 # Apply fuzzy matching to standardized spelling (e.g. "kolkonda" -> "Kolukonda")
-                fuzzy = detect_village_from_text(comp_village)
+                fuzzy = detect_village_from_text(comp_village, registered_list)
                 if fuzzy:
                     comp_village = fuzzy
                 
@@ -1255,7 +1258,7 @@ def dashboard():
             if not cert_village or cert_village.strip().lower() in ('unknown', '', 'not specified'):
                 cert_village = 'Kolukonda'
             else:
-                fuzzy = detect_village_from_text(cert_village)
+                fuzzy = detect_village_from_text(cert_village, registered_list)
                 if fuzzy:
                     cert_village = fuzzy
                 
