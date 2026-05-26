@@ -1186,6 +1186,11 @@ def dashboard():
            
             # Multitenancy filtering: only show complaints belonging to this Sarpanch's village!
             comp_village = village_name if village_name else location_text
+            
+            # Legacy fallback: if the village is empty or unknown, map it to the default village (Kolukonda)
+            if not comp_village or comp_village.strip().lower() in ('unknown', '', 'not specified'):
+                comp_village = 'Kolukonda'
+                
             if comp_village.strip().lower() != village.strip().lower():
                 continue
 
@@ -1242,6 +1247,9 @@ def dashboard():
                 }
             
             # Multitenancy filtering: only show certificates belonging to this village!
+            if not cert_village or cert_village.strip().lower() in ('unknown', '', 'not specified'):
+                cert_village = 'Kolukonda'
+                
             if cert_village.strip().lower() != village.strip().lower():
                 continue
            
