@@ -167,7 +167,7 @@ def init_db():
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS certificates (
             id TEXT PRIMARY KEY, type TEXT, name TEXT, father TEXT, phone TEXT,
-            purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT ''
+            purpose TEXT, status TEXT DEFAULT 'pending', filed_at TEXT, {u} TEXT, notes TEXT DEFAULT '', village TEXT DEFAULT ''
         )
     """)
    
@@ -214,15 +214,23 @@ def init_db():
     try:
         if db_type2 == "pg":
             cur2.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS voice_data TEXT;")
+            cur2.execute("ALTER TABLE certificates ADD COLUMN IF NOT EXISTS village TEXT DEFAULT '';")
         else:
+            # Check complaints
             cur2.execute("PRAGMA table_info(complaints)")
             cols = [row[1] if isinstance(row, tuple) else row['name'] for row in cur2.fetchall()]
             if 'voice_data' not in cols:
                 cur2.execute("ALTER TABLE complaints ADD COLUMN voice_data TEXT DEFAULT ''")
+            
+            # Check certificates
+            cur2.execute("PRAGMA table_info(certificates)")
+            cert_cols = [row[1] if isinstance(row, tuple) else row['name'] for row in cur2.fetchall()]
+            if 'village' not in cert_cols:
+                cur2.execute("ALTER TABLE certificates ADD COLUMN village TEXT DEFAULT ''")
         conn2.commit()
-        print("✅ voice_data column ready")
+        print("✅ DB migrations ready")
     except Exception as e:
-        print(f"⚠️  voice_data column: {e}")
+        print(f"⚠️ DB migrations error: {e}")
     finally:
         conn2.close()
     print(f"✅ Database ready ({db_type})")
@@ -252,10 +260,10 @@ def insert_certificate(c):
     p = get_placeholder(db_type)
     u = "updated" if db_type == "pg" else "updated_at"
     cur.execute(f"""
-        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes)
-        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
+        INSERT INTO certificates (id,type,name,father,phone,purpose,status,filed_at,{u},notes,village)
+        VALUES ({p},{p},{p},{p},{p},{p},{p},{p},{p},{p},{p})
     """,
-        (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],""))
+        (c["id"],c["type"],c["name"],c["father"],c["phone"],c["purpose"],"pending",c["filed_at"],c["filed_at"],"",c.get("village","")))
     conn.commit()
     conn.close()
 
@@ -488,12 +496,47 @@ def detect_village_from_coords(lat, lng):
         print(f"Geocoding error: {e}")
     return None
 
+def get_all_registered_villages():
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT village_name FROM sarpanch_users")
+        rows = cur.fetchall()
+        conn.close()
+        villages = []
+        for r in rows:
+            v = r['village_name'] if isinstance(r, dict) else r[0]
+            if v:
+                villages.append(v.strip().lower())
+        return villages
+    except Exception as e:
+        print(f"Error fetching registered villages: {e}")
+        return ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad'] # fallback
+
 def detect_village_from_text(text):
-    villages = ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad']
-    text_lower = text.lower()
-    for village in villages:
+    if not text:
+        return None
+    import difflib
+    registered_villages = get_all_registered_villages()
+    text_lower = text.lower().strip()
+    
+    # 1. Direct substring match (e.g. if text is "i live in kolukonda village")
+    for village in registered_villages:
         if village in text_lower:
             return village.title()
+            
+    # 2. Split words and find fuzzy match (handles mistypes like "kolkonda" or "kollukonda")
+    words = re.findall(r'\b\w+\b', text_lower)
+    for word in words:
+        matches = difflib.get_close_matches(word, registered_villages, n=1, cutoff=0.7)
+        if matches:
+            return matches[0].title()
+            
+    # 3. Try to fuzzy match the entire text (in case they typed just the village name with a typo)
+    matches = difflib.get_close_matches(text_lower, registered_villages, n=1, cutoff=0.6)
+    if matches:
+        return matches[0].title()
+        
     return None
 
 # ── WhatsApp API Function ────────────────────────────────────
@@ -693,17 +736,21 @@ def bot_reply(user_msg, ctx, media_info=None):
         detected_village = detect_village_from_text(msg)
         if detected_village:
             ctx["village"] = detected_village
-        elif not ctx.get("location_lat"):
-            ctx["location_text"] = msg
-       
-        ctx["state"] = "c_pri"
-        return (
-            "⚡ *How urgent? [ఎంత అత్యవసరం?]*\n\n"
-            "1. Low [తక్కువ]\n"
-            "2. Medium [మధ్యస్థం]\n"
-            "3. High [ఎక్కువ]\n\n"
-            "Please select 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:"
-        ), ctx
+            ctx["state"] = "c_pri"
+            return (
+                "⚡ *How urgent? [ఎంత అత్యవసరం?]*\n\n"
+                "1. Low [తక్కువ]\n"
+                "2. Medium [మధ్యస్థం]\n"
+                "3. High [ఎక్కువ]\n\n"
+                "Please select 1, 2, or 3 [దయచేసి 1, 2, లేదా 3 టైప్ చేయండి]:"
+            ), ctx
+        else:
+            registered = get_all_registered_villages()
+            registered_list = ", ".join([v.title() for v in registered])
+            return (
+                f"❌ *Village not recognized [గ్రామం గుర్తించబడలేదు]*.\n\n"
+                f"Please type one of our active registered villages: *{registered_list}* [దయచేసి సక్రియ గ్రామాల నుండి ఎంచుకోండి]:"
+            ), ctx
    
     if state == "c_pri":
         pmap = {"1": "low", "2": "medium", "3": "high"}
@@ -797,21 +844,42 @@ def bot_reply(user_msg, ctx, media_info=None):
     if state == "cert_purpose":
         if len(msg) < 3:
             return "❌ Please enter a valid purpose [దయచేసి ప్రయోజనాన్ని టైప్ చేయండి]:", ctx
-        ref = new_id("CERT-")
-        rec = {
-            "id": ref, "type": ctx["cert_type"], "name": ctx["cert_name"],
-            "father": ctx["cert_father"], "phone": ctx["cert_phone"],
-            "purpose": msg, "filed_at": now_str()
-        }
-        insert_certificate(rec)
+        ctx["cert_purpose"] = msg
+        ctx["state"] = "cert_village"
+        registered = get_all_registered_villages()
+        registered_list = ", ".join([v.title() for v in registered])
         return (
-            f"✅ *Certificate Request Submitted [సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది]*!\n\n"
-            f"📋 ID: {ref}\n"
-            f"👤 Name [పేరు]: {rec['name']}\n"
-            f"📄 Type [రకం]: {rec['type']}\n\n"
-            f"Processing takes 5-7 days [ప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది].\n\n"
-            f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
-        ), {"state": "idle", "lang": lang}
+            f"📍 *Village Name [గ్రామం పేరు]*\n\n"
+            f"Please type your village name (choose from active: *{registered_list}*) [దయచేసి మీ గ్రామం పేరు టైప్ చేయండి]:"
+        ), ctx
+        
+    if state == "cert_village":
+        detected_village = detect_village_from_text(msg)
+        if detected_village:
+            ref = new_id("CERT-")
+            rec = {
+                "id": ref, "type": ctx["cert_type"], "name": ctx["cert_name"],
+                "father": ctx["cert_father"], "phone": ctx["cert_phone"],
+                "purpose": ctx["cert_purpose"], "filed_at": now_str(),
+                "village": detected_village
+            }
+            insert_certificate(rec)
+            return (
+                f"✅ *Certificate Request Submitted [సర్టిఫికెట్ అభ్యర్థన నమోదు చేయబడింది]*!\n\n"
+                f"📋 ID: {ref}\n"
+                f"👤 Name [పేరు]: {rec['name']}\n"
+                f"📄 Type [రకం]: {rec['type']}\n"
+                f"📍 Village [గ్రామం]: {rec['village']}\n\n"
+                f"Processing takes 5-7 days [ప్రాసెస్ చేయడానికి 5-7 రోజులు పడుతుంది].\n\n"
+                f"Type *menu* for main menu [మెనూ కోసం *menu* టైప్ చేయండి]"
+            ), {"state": "idle", "lang": lang}
+        else:
+            registered = get_all_registered_villages()
+            registered_list = ", ".join([v.title() for v in registered])
+            return (
+                f"❌ *Village not recognized [గ్రామం గుర్తించబడలేదు]*.\n\n"
+                f"Please type one of our active registered villages: *{registered_list}* [దయచేసి సక్రియ గ్రామాల నుండి ఎంచుకోండి]:"
+            ), ctx
    
     if state == "track_id":
         if len(msg) < 5:
@@ -896,7 +964,11 @@ def whatsapp_webhook():
             name = msg["location"].get("name", "")
             address = msg["location"].get("address", "")
             maps_link = f"https://maps.google.com/?q={lat},{lng}"
-            detected_village = detect_village_from_coords(lat, lng) or name or "Unknown"
+            gps_village = detect_village_from_coords(lat, lng) or name or ""
+            detected_village = "Unknown"
+            if gps_village:
+                fuzzy = detect_village_from_text(gps_village)
+                detected_village = fuzzy or gps_village.title()
             print(f"📍 Location from {sender}: {detected_village}")
             session_data["location_lat"] = lat
             session_data["location_lng"] = lng
@@ -1112,6 +1184,11 @@ def dashboard():
                     'media_type': x[15] if len(x) > 15 else '', 'media_url': x[16] if len(x) > 16 else ''
                 }
            
+            # Multitenancy filtering: only show complaints belonging to this Sarpanch's village!
+            comp_village = village_name if village_name else location_text
+            if comp_village.strip().lower() != village.strip().lower():
+                continue
+
             status_match = (filter_status == 'ALL' or status == filter_status)
             priority_match = (filter_priority == 'ALL' or priority == filter_priority)
            
@@ -1149,6 +1226,7 @@ def dashboard():
         for x in ce:
             if isinstance(x, dict):
                 status = x.get('status', 'pending')
+                cert_village = x.get('village', '')
                 cert = {
                     'id': x.get('id', ''), 'type': x.get('type', ''), 'name': x.get('name', ''),
                     'phone': x.get('phone', ''), 'purpose': x.get('purpose', ''),
@@ -1156,11 +1234,16 @@ def dashboard():
                 }
             else:
                 status = x[6] if len(x) > 6 else 'pending'
+                cert_village = x[10] if len(x) > 10 else ''
                 cert = {
                     'id': x[0], 'type': x[1], 'name': x[2],
                     'phone': x[4] if len(x) > 4 else '', 'purpose': x[5] if len(x) > 5 else '',
                     'status': status, 'filed_at': x[7] if len(x) > 7 else ''
                 }
+            
+            # Multitenancy filtering: only show certificates belonging to this village!
+            if cert_village.strip().lower() != village.strip().lower():
+                continue
            
             if status == 'pending':
                 pending_certs.append(cert)
@@ -1236,6 +1319,17 @@ def view_complaint(cid):
        
         if not row:
             return "Complaint not found", 404
+            
+        # Multitenancy security verification:
+        sarpanch_village = session.get('sarpanch_village', 'Kolukonda')
+        comp_village = ""
+        if isinstance(row, dict):
+            comp_village = row.get('village') or row.get('location') or ""
+        else:
+            comp_village = row[17] if len(row) > 17 else (row[5] or "")
+            
+        if comp_village.strip().lower() != sarpanch_village.strip().lower():
+            return "Unauthorized to view this complaint", 403
        
         if isinstance(row, dict):
             complaint_dict = row
@@ -1270,6 +1364,38 @@ def update_status_route():
         p = get_placeholder(db_type)
         cur.execute(f"UPDATE complaints SET status = {p}, notes = {p} WHERE id = {p}", (new_status, notes, ticket_id))
         conn.commit()
+        
+        # ── Send automatic WhatsApp resolution alert if resolved/rejected ──
+        if new_status in ("resolved", "rejected"):
+            try:
+                cur.execute(f"SELECT name, phone, village FROM complaints WHERE id = {p}", (ticket_id,))
+                citizen = cur.fetchone()
+                if citizen:
+                    c_name = citizen['name'] if isinstance(citizen, dict) else citizen[0]
+                    c_phone = citizen['phone'] if isinstance(citizen, dict) else citizen[1]
+                    c_village = citizen['village'] if isinstance(citizen, dict) else citizen[2]
+                    
+                    status_str = "RESOLVED" if new_status == "resolved" else "REJECTED"
+                    status_te = "పరిష్కరించబడింది" if new_status == "resolved" else "తిరస్కరించబడింది"
+                    
+                    notes_section = f"\n📝 Note from Sarpanch: {notes}" if notes else ""
+                    notes_section_te = f"\n📝 సర్పంచ్ గారి సందేశం: {notes}" if notes else ""
+                    
+                    alert_message = (
+                        f"📢 *Dear {c_name}, your complaint (ID: {ticket_id}) has been marked as {status_str}!* ✅\n"
+                        f"{notes_section}\n\n"
+                        f"Thank you for helping keep {c_village} clean and safe! 🙏\n\n"
+                        f"──────────────────\n\n"
+                        f"📢 *ప్రియమైన {c_name} గారు, మీ ఫిర్యాదు (ID: {ticket_id}) {status_te}!* ✅\n"
+                        f"{notes_section_te}\n\n"
+                        f"మన {c_village} గ్రామాన్ని పరిశుభ్రంగా మరియు సురక్షితంగా ఉంచడంలో సహాయపడినందుకు ధన్యవాదాలు! 🙏"
+                    )
+                    
+                    print(f"📨 Triggering automatic resolution alert to {c_phone} for {ticket_id}")
+                    send_whatsapp_message(c_phone, alert_message)
+            except Exception as e_notify:
+                print(f"⚠️ Error triggering resolution WhatsApp alert: {e_notify}")
+                
         conn.close()
         return redirect(url_for('view_complaint', cid=ticket_id))
     except Exception as e:
