@@ -1190,6 +1190,11 @@ def dashboard():
             # Legacy fallback: if the village is empty or unknown, map it to the default village (Kolukonda)
             if not comp_village or comp_village.strip().lower() in ('unknown', '', 'not specified'):
                 comp_village = 'Kolukonda'
+            else:
+                # Apply fuzzy matching to standardized spelling (e.g. "kolkonda" -> "Kolukonda")
+                fuzzy = detect_village_from_text(comp_village)
+                if fuzzy:
+                    comp_village = fuzzy
                 
             if comp_village.strip().lower() != village.strip().lower():
                 continue
@@ -1249,6 +1254,10 @@ def dashboard():
             # Multitenancy filtering: only show certificates belonging to this village!
             if not cert_village or cert_village.strip().lower() in ('unknown', '', 'not specified'):
                 cert_village = 'Kolukonda'
+            else:
+                fuzzy = detect_village_from_text(cert_village)
+                if fuzzy:
+                    cert_village = fuzzy
                 
             if cert_village.strip().lower() != village.strip().lower():
                 continue
