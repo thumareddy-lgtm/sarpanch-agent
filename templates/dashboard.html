@@ -163,7 +163,12 @@
 
     /* Mobile Responsive Stacked Card Table */
     @media (max-width: 768px) {
-      #complaints-sec table, 
+      #complaints-sec table {
+        display: block;
+        width: 100% !important;
+        min-width: 0 !important;
+      }
+      
       #complaints-sec thead, 
       #complaints-sec tbody, 
       #complaints-sec th, 
@@ -195,7 +200,7 @@
         padding: 0.6rem 0.5rem 0.6rem 45% !important;
         text-align: right !important;
         display: flex;
-        justify-content: space-between;
+        justify-content: flex-end !important;
         align-items: center;
         box-sizing: border-box;
       }
