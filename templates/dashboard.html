@@ -161,74 +161,7 @@
       }
     }
 
-    /* Mobile Responsive Stacked Card Table */
-    @media (max-width: 768px) {
-      #complaints-sec table {
-        display: block;
-        width: 100% !important;
-        min-width: 0 !important;
-      }
-      
-      #complaints-sec thead, 
-      #complaints-sec tbody, 
-      #complaints-sec th, 
-      #complaints-sec td, 
-      #complaints-sec tr {
-        display: block;
-        width: 100%;
-      }
-      
-      #complaints-sec thead tr {
-        position: absolute;
-        top: -9999px;
-        left: -9999px;
-      }
-      
-      #complaints-sec tr {
-        margin: 0 0 1rem 0;
-        background: rgba(255, 255, 255, 0.95);
-        border: 1px solid var(--border-light);
-        border-radius: var(--radius-md);
-        padding: 0.75rem 1rem;
-        box-shadow: var(--shadow-sm);
-      }
-      
-      #complaints-sec td {
-        border: none;
-        border-bottom: 1px dashed var(--border-light);
-        position: relative;
-        padding: 0.6rem 0.5rem 0.6rem 45% !important;
-        text-align: right !important;
-        display: flex;
-        justify-content: flex-end !important;
-        align-items: center;
-        box-sizing: border-box;
-      }
-      
-      #complaints-sec td:last-child {
-        border-bottom: 0;
-      }
-      
-      #complaints-sec td:before {
-        position: absolute;
-        left: 12px;
-        width: 40%;
-        padding-right: 10px;
-        white-space: nowrap;
-        text-align: left;
-        font-weight: 700;
-        color: var(--text-muted);
-        content: attr(data-label);
-      }
-      
-      /* Stack problem description and inline audio note vertically on mobile cards */
-      #complaints-sec td[data-label="Problem"] {
-        flex-direction: column !important;
-        align-items: flex-end !important;
-        justify-content: flex-start !important;
-        gap: 0.25rem;
-      }
-    }
+
   </style>
   <script>
     // Force browser to always load at the absolute top of the page on refresh (disable native scroll restoration)
