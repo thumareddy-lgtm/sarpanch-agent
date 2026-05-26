@@ -1348,6 +1348,15 @@ def view_complaint(cid):
         else:
             comp_village = row[17] if len(row) > 17 else (row[5] or "")
             
+        # Legacy fallback: if the village is empty or unknown, map it to the default village (Kolukonda)
+        if not comp_village or comp_village.strip().lower() in ('unknown', '', 'not specified'):
+            comp_village = 'Kolukonda'
+        else:
+            # Apply fuzzy matching to standardized spelling (e.g. "kolkonda" -> "Kolukonda")
+            fuzzy = detect_village_from_text(comp_village)
+            if fuzzy:
+                comp_village = fuzzy
+            
         if comp_village.strip().lower() != sarpanch_village.strip().lower():
             return "Unauthorized to view this complaint", 403
        
