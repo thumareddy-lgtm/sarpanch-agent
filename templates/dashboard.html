@@ -215,6 +215,14 @@
         color: var(--text-muted);
         content: attr(data-label);
       }
+      
+      /* Stack problem description and inline audio note vertically on mobile cards */
+      #complaints-sec td[data-label="Problem"] {
+        flex-direction: column !important;
+        align-items: flex-end !important;
+        justify-content: flex-start !important;
+        gap: 0.25rem;
+      }
     }
   </style>
   <script>
