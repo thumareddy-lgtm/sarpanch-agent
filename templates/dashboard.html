@@ -227,6 +227,24 @@
       document.getElementById('sarpanch-header-img').style.display = 'none';
       document.getElementById('sarpanch-header-placeholder').style.display = 'flex';
     }
+
+    // Smart auto-refresh every 35 seconds
+    setInterval(() => {
+      // Only refresh if the user is not actively typing in an input or textarea
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        console.log('User is typing, postponing auto-refresh');
+        return;
+      }
+      window.location.reload();
+    }, 35000);
+
+    // Force top on load if no hash
+    window.addEventListener('load', () => {
+      if (!window.location.hash) {
+        window.scrollTo(0, 0);
+      }
+    });
   </script>
 </head>
 <body class="app-container">
@@ -367,9 +385,32 @@
               </td>
               <td data-label="Category">{{ x.category }}</td>
               <td data-label="Problem">
-                <div style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem;">
+                <div style="max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.85rem; margin-bottom: 0.5rem;">
                   {{ x.description }}
                 </div>
+                {% if x.media_type == 'voice' and x.media_url %}
+                  {% set voice_url = x.media_url %}
+                  {% set is_cloud   = 'cloudinary' in voice_url %}
+                  {% set is_db      = voice_url.startswith('/voice/') %}
+                  {% set is_local   = voice_url.startswith('/static/voices/') %}
+                  <div style="margin-top: 0.5rem; max-width: 220px;">
+                    <audio
+                      controls
+                      playsinline
+                      preload="metadata"
+                      style="width: 100%; height: 30px; border-radius: 4px;"
+                    >
+                      {% if is_cloud %}
+                        <source src="{{ voice_url }}" type="audio/mpeg">
+                      {% elif is_db %}
+                        <source src="{{ voice_url }}" type="audio/mpeg">
+                        <source src="{{ voice_url }}" type="audio/ogg; codecs=opus">
+                      {% else %}
+                        <source src="/voice-stream?url={{ voice_url | urlencode }}" type="audio/ogg; codecs=opus">
+                      {% endif %}
+                    </audio>
+                  </div>
+                {% endif %}
               </td>
               <td data-label="Location">
                 {% if x.maps_link %}
@@ -694,6 +735,8 @@
             el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           }, 300);
         }
+      } else {
+        window.scrollTo(0, 0);
       }
     });
 

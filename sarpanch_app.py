@@ -545,6 +545,14 @@ def send_whatsapp_message(to_number, message):
     if not META_TOKEN:
         print(" META_TOKEN not set")
         return False
+    
+    # Standardize the phone number:
+    # 1. Clean all non-digit characters
+    clean_number = re.sub(r"\D", "", str(to_number))
+    
+    # 2. If it is a standard 10-digit number, prepend the '91' country code
+    if len(clean_number) == 10:
+        clean_number = "91" + clean_number
    
     url = f"https://graph.facebook.com/v19.0/{PHONE_NUMBER_ID}/messages"
     headers = {
@@ -553,14 +561,14 @@ def send_whatsapp_message(to_number, message):
     }
     payload = {
         "messaging_product": "whatsapp",
-        "to": to_number,
+        "to": clean_number,
         "type": "text",
         "text": {"body": message}
     }
     try:
         response = requests.post(url, headers=headers, json=payload)
         if response.status_code == 200:
-            print(f"📨 Message sent to {to_number}")
+            print(f"📨 Message sent to {clean_number}")
             return True
         else:
             print(f"❌ Failed: {response.status_code} - {response.text}")
