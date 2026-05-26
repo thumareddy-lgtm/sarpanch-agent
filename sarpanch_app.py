@@ -99,7 +99,7 @@ def force_add_village_column():
     try:
         if DATABASE_URL:
             import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=3)
             cur = conn.cursor()
             cur.execute("ALTER TABLE complaints ADD COLUMN IF NOT EXISTS village TEXT DEFAULT ''")
             conn.commit()
@@ -137,7 +137,7 @@ def get_db():
     if DATABASE_URL:
         try:
             import psycopg2, psycopg2.extras
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=3)
             conn.cursor_factory = psycopg2.extras.RealDictCursor
             return conn, "pg"
         except Exception as e:
@@ -497,21 +497,31 @@ def detect_village_from_coords(lat, lng):
     return None
 
 def get_all_registered_villages():
+    conn = None
     try:
         conn, db_type = get_db()
         cur = conn.cursor()
         cur.execute("SELECT DISTINCT village_name FROM sarpanch_users")
         rows = cur.fetchall()
-        conn.close()
         villages = []
         for r in rows:
-            v = r['village_name'] if isinstance(r, dict) else r[0]
+            v = None
+            try:
+                v = r['village_name']
+            except:
+                try:
+                    v = r.get('village_name')
+                except:
+                    v = r[0]
             if v:
                 villages.append(v.strip().lower())
         return villages
     except Exception as e:
         print(f"Error fetching registered villages: {e}")
         return ['kolukonda', 'keesara', 'ghatkesar', 'pocharam', 'jangaon', 'hyderabad'] # fallback
+    finally:
+        if conn:
+            conn.close()
 
 def detect_village_from_text(text, registered_villages=None):
     if not text:
